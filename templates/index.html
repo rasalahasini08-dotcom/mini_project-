@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urban Parking Allocator | Concurrency-Safe Management & Surge Analytics</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🅿️</text></svg>">
+</head>
+<body>
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+        <div class="nav-container">
+            <div class="brand">
+                <span class="brand-icon">🅿️</span>
+                <div>
+                    <h1 class="brand-title">Urban Parking Allocator</h1>
+                    <span class="brand-subtitle">Concurrency-Safe Resource Allocation & Surge Analytics</span>
+                </div>
+            </div>
+            <div class="nav-actions">
+                <div class="live-pill" id="live-indicator">
+                    <span class="pulse-dot"></span>
+                    <span id="live-text">System Live</span>
+                </div>
+                <button id="btn-refresh" class="btn btn-secondary" title="Manually refresh dashboard from database">
+                    <span class="refresh-icon">🔄</span> Refresh
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="container">
+        <!-- Toast Notification Container -->
+        <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+        <!-- Metrics Ribbon -->
+        <section class="metrics-grid">
+            <div class="metric-card">
+                <span class="metric-label">Total Capacity</span>
+                <span class="metric-value" id="metric-total">12</span>
+                <span class="metric-hint">Standard Urban Bay</span>
+            </div>
+            <div class="metric-card">
+                <span class="metric-label">Available Slots</span>
+                <span class="metric-value text-success" id="metric-available">--</span>
+                <span class="metric-hint">Ready for allocation</span>
+            </div>
+            <div class="metric-card">
+                <span class="metric-label">Occupied Slots</span>
+                <span class="metric-value text-danger" id="metric-occupied">--</span>
+                <span class="metric-hint">Active vehicles</span>
+            </div>
+            <div class="metric-card">
+                <span class="metric-label">Current Occupancy</span>
+                <div class="occupancy-wrap">
+                    <span class="metric-value" id="metric-occupancy">--%</span>
+                    <div class="progress-bar-bg">
+                        <div id="occupancy-bar" class="progress-bar-fill" style="width: 0%;"></div>
+                    </div>
+                </div>
+                <span class="metric-hint" id="metric-occupancy-desc">Calculating...</span>
+            </div>
+            <div class="metric-card highlight-card">
+                <span class="metric-label">Current Hourly Rate</span>
+                <div class="price-wrap">
+                    <span class="metric-value price-text" id="metric-price">₹--</span>
+                    <span id="surge-badge" class="badge badge-success">Standard</span>
+                </div>
+                <span class="metric-hint" id="surge-description">Base pricing</span>
+            </div>
+        </section>
+
+        <!-- Surge Pricing Analytics Breakdown -->
+        <section class="section-card">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">Dynamic Surge Pricing Model</h2>
+                    <p class="section-subtitle">Real-time hourly parking fee dynamically adjusted based on bay occupancy</p>
+                </div>
+                <span class="formula-badge">Formula: (Occupied Slots / 12) × 100</span>
+            </div>
+            <div class="tiers-grid">
+                <div class="tier-card" id="tier-standard">
+                    <div class="tier-top">
+                        <span class="tier-title">Standard Tier</span>
+                        <span class="tier-rate">₹50 / hr</span>
+                    </div>
+                    <div class="tier-range">Occupancy &lt; 50% (0 – 5 slots)</div>
+                    <p class="tier-note">Normal operating demand. Standard flat base fee applied.</p>
+                </div>
+                <div class="tier-card" id="tier-moderate">
+                    <div class="tier-top">
+                        <span class="tier-title">Moderate Surge Tier</span>
+                        <span class="tier-rate">₹75 / hr</span>
+                    </div>
+                    <div class="tier-range">Occupancy 50% to &lt; 80% (6 – 9 slots)</div>
+                    <p class="tier-note">Elevated demand. 1.5x multiplier to incentivize turnover.</p>
+                </div>
+                <div class="tier-card" id="tier-peak">
+                    <div class="tier-top">
+                        <span class="tier-title">Peak Surge Tier</span>
+                        <span class="tier-rate">₹100 / hr</span>
+                    </div>
+                    <div class="tier-range">Occupancy &ge; 80% (10 – 12 slots)</div>
+                    <p class="tier-note">Congestion mitigation. 2.0x peak pricing to reserve capacity.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Visual Parking Grid (12 Slots) -->
+        <section class="section-card">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">Parking Bay Visual Layout</h2>
+                    <p class="section-subtitle">Select any available slot to book, or manage active allocations</p>
+                </div>
+                <div class="legend">
+                    <span class="legend-item"><span class="dot dot-available"></span> Available</span>
+                    <span class="legend-item"><span class="dot dot-occupied"></span> Occupied</span>
+                </div>
+            </div>
+
+            <!-- Slots Grid -->
+            <div id="slots-grid" class="slots-grid">
+                <!-- Slot cards generated dynamically via JavaScript -->
+                <div class="loading-state">Loading parking slots from database...</div>
+            </div>
+        </section>
+
+        <!-- Recent Activity & Audit History -->
+        <section class="section-card">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">Recent Allocation Audit Trail</h2>
+                    <p class="section-subtitle">Persistent transaction log tracking active and released parking records</p>
+                </div>
+                <span class="audit-counter" id="history-count">0 records</span>
+            </div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Booking ID</th>
+                            <th>Slot</th>
+                            <th>Driver Name</th>
+                            <th>Vehicle Number</th>
+                            <th>Applied Rate</th>
+                            <th>Booked At</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-tbody">
+                        <tr>
+                            <td colspan="8" class="text-center text-muted">Loading audit history...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Technical Concurrency & Review Info Box -->
+        <section class="tech-review-card">
+            <div class="tech-header">
+                <span class="tech-icon">🛡️</span>
+                <div>
+                    <h3 class="tech-title">Engineering Architecture & Concurrency Defense</h3>
+                    <p class="tech-sub">Key mechanisms implemented for race condition prevention & ACID compliance</p>
+                </div>
+            </div>
+            <div class="tech-points">
+                <div class="tech-point">
+                    <strong>1. Atomic Conditional Updates:</strong>
+                    <code>UPDATE parking_slots SET status = 'OCCUPIED' WHERE slot_id = ? AND status = 'AVAILABLE'</code>
+                    Guarantees SQLite atomicity. If two threads compete for the same slot, exactly one thread sees <code>rowcount == 1</code>; all competing threads see <code>rowcount == 0</code> and are safely rejected.
+                </div>
+                <div class="tech-point">
+                    <strong>2. Database Partial Unique Constraint:</strong>
+                    <code>CREATE UNIQUE INDEX idx_active_slot_booking ON bookings(slot_id) WHERE status = 'ACTIVE'</code>
+                    Hard schema-level barrier preventing duplicate concurrent active allocations for the same slot.
+                </div>
+                <div class="tech-point">
+                    <strong>3. Immediate Write Locks & WAL Mode:</strong>
+                    Transactions use <code>BEGIN IMMEDIATE</code> with <code>PRAGMA journal_mode = WAL</code> to prevent lock escalation deadlocks and ensure non-blocking concurrent reads.
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Booking Modal -->
+    <div id="booking-modal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title">Allocate Parking Slot <span id="modal-slot-id">P01</span></h3>
+                <button type="button" class="btn-close" id="btn-close-modal" aria-label="Close">&times;</button>
+            </div>
+            <form id="booking-form">
+                <input type="hidden" id="form-slot-id" name="slot_id" value="">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label" for="form-user-name">Driver Full Name</label>
+                        <input type="text" id="form-user-name" class="form-control" placeholder="e.g. Rohan Sharma" required autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="form-vehicle-no">Vehicle Registration Number</label>
+                        <input type="text" id="form-vehicle-no" class="form-control text-uppercase" placeholder="e.g. KA-05-MB-4512" required autocomplete="off">
+                    </div>
+                    <div class="rate-preview-card">
+                        <div class="rate-preview-header">
+                            <span>Locked-In Hourly Rate:</span>
+                            <span class="rate-preview-amount" id="modal-rate-preview">₹50 / hr</span>
+                        </div>
+                        <span class="rate-preview-sub">Computed via live surge analytics based on current bay occupancy.</span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btn-submit-booking">
+                        <span class="btn-spinner" id="btn-spinner"></span>
+                        <span id="btn-submit-text">Confirm Booking</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container footer-content">
+            <p><strong>Concurrency-Safe Urban Parking Allocator With Surge Analytics</strong> &bull; College Mini-Project</p>
+            <p class="footer-meta">Python &bull; Flask &bull; SQLite Concurrency Control &bull; RESTful Architecture</p>
+        </div>
+    </footer>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
