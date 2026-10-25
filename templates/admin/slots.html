@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Parking Slots | Urban Parking Allocator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Parking Slot Management</h1>
+        <p class="page-subtitle">Inspect individual bay allocation states, assign maintenance holds, and supervise slot utilization</p>
+    </div>
+    <div style="display: flex; gap: 0.75rem;">
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary btn-sm">
+            &larr; Admin Dashboard
+        </a>
+    </div>
+</div>
+
+<!-- Filters Bar -->
+<section class="section-card" style="padding: 1.25rem; margin-bottom: 1.5rem;">
+    <form method="GET" action="{{ url_for('admin.manage_slots') }}" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <label style="font-size: 0.85rem; font-weight: 700; color: var(--navy-darkest);">Filter Slots:</label>
+            <select name="zone_id" class="form-control" style="width: auto; min-width: 180px;" onchange="this.form.submit()">
+                <option value="">All Zones</option>
+                {% for z in zones %}
+                    <option value="{{ z.id }}" {% if selected_zone == z.id %}selected{% endif %}>
+                        {{ z.code }} - {{ z.name }}
+                    </option>
+                {% endfor %}
+            </select>
+
+            <select name="status" class="form-control" style="width: auto; min-width: 180px;" onchange="this.form.submit()">
+                <option value="">All Statuses</option>
+                <option value="AVAILABLE" {% if selected_status == 'AVAILABLE' %}selected{% endif %}>Available</option>
+                <option value="OCCUPIED" {% if selected_status == 'OCCUPIED' %}selected{% endif %}>Occupied</option>
+                <option value="MAINTENANCE" {% if selected_status == 'MAINTENANCE' %}selected{% endif %}>Maintenance</option>
+            </select>
+        </div>
+
+        <div style="font-size: 0.85rem; color: var(--slate-muted);">
+            Displaying <strong>{{ slots|length }}</strong> parking slots
+        </div>
+    </form>
+</section>
+
+<!-- Slots Table -->
+<section class="section-card">
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Slot #</th>
+                    <th>Zone</th>
+                    <th>Bay Type</th>
+                    <th>Floor Level</th>
+                    <th>Current Status</th>
+                    <th>Active Allocation</th>
+                    <th>Admin Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in slots %}
+                {% set active_bkg = s.bookings.filter_by(status='ACTIVE').first() %}
+                <tr>
+                    <td><strong style="font-family: var(--font-mono); font-size: 1.1rem; color: var(--navy-darkest);">{{ s.slot_number }}</strong></td>
+                    <td>
+                        <span class="zone-code">{{ s.zone.code }}</span>
+                        <span style="font-size: 0.85rem; margin-left: 0.25rem;">{{ s.zone.name }}</span>
+                    </td>
+                    <td>
+                        {% if s.slot_type == 'EV Charging' %}
+                            <span class="badge badge-info">⚡ EV Charging</span>
+                        {% elif s.slot_type == 'Accessible' %}
+                            <span class="badge badge-warning">♿ Accessible</span>
+                        {% else %}
+                            <span class="badge badge-neutral">🚗 Standard</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ s.floor_level }}</td>
+                    <td>
+                        {% if s.status == 'AVAILABLE' %}
+                            <span class="badge badge-success">AVAILABLE</span>
+                        {% elif s.status == 'OCCUPIED' %}
+                            <span class="badge badge-danger">OCCUPIED</span>
+                        {% else %}
+                            <span class="badge badge-warning">MAINTENANCE</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if active_bkg %}
+                            <div>
+                                <strong>{{ active_bkg.vehicle_number }}</strong> &bull; {{ active_bkg.driver_name }}<br>
+                                <span style="font-size: 0.75rem; color: #64748B;">Ref: {{ active_bkg.booking_reference }}</span>
+                            </div>
+                        {% else %}
+                            <span style="color: #94A3B8; font-size: 0.82rem;">None (Bay Vacant)</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                            {% if s.status == 'AVAILABLE' %}
+                                <form method="POST" action="{{ url_for('admin.manage_slots', zone_id=selected_zone, status=selected_status) }}">
+                                    <input type="hidden" name="slot_id" value="{{ s.id }}">
+                                    <input type="hidden" name="status" value="MAINTENANCE">
+                                    <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">
+                                        Hold for Maintenance
+                                    </button>
+                                </form>
+                            {% elif s.status == 'MAINTENANCE' %}
+                                <form method="POST" action="{{ url_for('admin.manage_slots', zone_id=selected_zone, status=selected_status) }}">
+                                    <input type="hidden" name="slot_id" value="{{ s.id }}">
+                                    <input type="hidden" name="status" value="AVAILABLE">
+                                    <button type="submit" class="btn btn-primary btn-sm" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">
+                                        Release to Available
+                                    </button>
+                                </form>
+                            {% elif s.status == 'OCCUPIED' and active_bkg %}
+                                <form method="POST" action="{{ url_for('admin.cancel_booking_admin', booking_ref=active_bkg.booking_reference) }}" onsubmit="return confirm('Cancel active reservation and immediately release slot {{ s.slot_number }}?');">
+                                    <button type="submit" class="btn btn-danger btn-sm" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">
+                                        Force Clear Bay
+                                    </button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" style="text-align: center; color: #64748B; padding: 2rem;">No slots found matching the selected filters.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

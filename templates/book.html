@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+
+{% block title %}Book Parking Slot | Urban Parking Allocator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Parking Reservation & Slot Allocation</h1>
+        <p class="page-subtitle">Reserve a specific bay slot with atomic concurrency protection, or request automatic optimal allocation</p>
+    </div>
+    <div style="display: flex; gap: 0.75rem;">
+        <a href="#cancel-section" class="btn btn-secondary btn-sm">
+            🔍 Lookup / Cancel Existing Booking
+        </a>
+    </div>
+</div>
+
+<!-- Zone Selection Ribbon -->
+<section class="section-card" style="padding: 1.25rem; margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <label for="zone-select" style="font-weight: 700; color: var(--navy-darkest); font-size: 0.95rem;">Select Parking Zone:</label>
+            <select id="zone-select" class="form-control" style="width: auto; min-width: 260px; font-weight: 600;">
+                {% for z in zones %}
+                    <option value="{{ z.id }}" {% if z.id == selected_zone_id %}selected{% endif %}>
+                        {{ z.code }} &bull; {{ z.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div id="zone-pricing-banner">
+            <!-- Populated via booking.js -->
+        </div>
+    </div>
+</section>
+
+<!-- Dual Booking Options Grid -->
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 2.5rem;" class="booking-layout-grid">
+    <!-- Visual Slot Bay Grid -->
+    <section class="section-card" style="margin-bottom: 0;">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">Visual Parking Bay Layout</h2>
+                <p class="section-subtitle">Click any <strong style="color: #059669;">AVAILABLE</strong> green slot to reserve it directly</p>
+            </div>
+            <div style="display: flex; gap: 1rem; font-size: 0.8rem;">
+                <span style="display: inline-flex; align-items: center; gap: 0.35rem;"><span style="width: 12px; height: 12px; background: #86EFAC; border-radius: 3px; display: inline-block;"></span> Available</span>
+                <span style="display: inline-flex; align-items: center; gap: 0.35rem;"><span style="width: 12px; height: 12px; background: #FECACA; border-radius: 3px; display: inline-block;"></span> Occupied</span>
+                <span style="display: inline-flex; align-items: center; gap: 0.35rem;"><span style="width: 12px; height: 12px; background: #FDE68A; border-radius: 3px; display: inline-block;"></span> Maintenance</span>
+            </div>
+        </div>
+
+        <div id="slots-grid" class="slots-grid">
+            <!-- Dynamic slot elements populated by booking.js -->
+            <div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: #64748B;">
+                Loading live parking bay status...
+            </div>
+        </div>
+    </section>
+
+    <!-- Automatic Best Slot Allocator Form -->
+    <section class="section-card" style="margin-bottom: 0; background-color: var(--navy-subtle); border-color: var(--teal-border);">
+        <div class="section-header" style="border-bottom-color: #CBD5E1;">
+            <div>
+                <h2 class="section-title" style="font-size: 1.15rem;">⚡ Auto-Allocate Best Slot</h2>
+                <p class="section-subtitle">System assigns first optimal available slot without manual selection</p>
+            </div>
+        </div>
+
+        <form id="auto-allocate-form">
+            <div class="form-group">
+                <label class="form-label">Selected Zone</label>
+                <select id="auto-zone-select" class="form-control" required>
+                    {% for z in zones %}
+                        <option value="{{ z.id }}" {% if z.id == selected_zone_id %}selected{% endif %}>
+                            {{ z.code }} - {{ z.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Preferred Slot Type</label>
+                <select id="auto-slot-type" class="form-control">
+                    <option value="Standard">Standard Slot (Any regular vehicle)</option>
+                    <option value="EV Charging">EV Fast Charging Bay</option>
+                    <option value="Accessible">Accessible Bay</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="auto-driver-name">Driver Full Name *</label>
+                <input type="text" id="auto-driver-name" class="form-control" placeholder="e.g. Vikramaditya Roy" required autocomplete="off">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="auto-vehicle-no">Vehicle Registration Number *</label>
+                <input type="text" id="auto-vehicle-no" class="form-control" placeholder="e.g. MH-12-AB-9876" required style="text-transform: uppercase;" autocomplete="off">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="auto-contact-no">Mobile Contact Number (Optional)</label>
+                <input type="tel" id="auto-contact-no" class="form-control" placeholder="e.g. +91 98765 43210" autocomplete="off">
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="btn-auto-submit" style="width: 100%; padding: 0.75rem;">
+                ⚡ Auto-Allocate Best Slot
+            </button>
+            <p style="font-size: 0.75rem; color: #64748B; text-align: center; margin-top: 0.5rem;">
+                Guaranteed collision-free allocation using atomic lock acquisition.
+            </p>
+        </form>
+    </section>
+</div>
+
+<!-- Active Booking Search & Cancellation Section -->
+<section id="cancel-section" class="section-card">
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">Lookup & Cancel Active Reservation</h2>
+            <p class="section-subtitle">Need to release a parked slot? Enter your booking reference to cancel and free the bay</p>
+        </div>
+        <span class="badge badge-neutral">Instant Atomic Release</span>
+    </div>
+
+    <form id="cancel-form" style="max-width: 600px;">
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <input type="text" id="cancel-ref-input" class="form-control" style="flex: 1; text-transform: uppercase; font-family: var(--font-mono); font-weight: 600;" placeholder="Enter reference: e.g. BKG-20261025-A1B2C3D4" required autocomplete="off">
+            <button type="submit" class="btn btn-danger">
+                Release / Cancel Slot
+            </button>
+        </div>
+        <p style="font-size: 0.8rem; color: var(--slate-muted); margin-top: 0.5rem;">
+            Slot status will immediately revert to AVAILABLE in the database, allowing next drivers to book.
+        </p>
+    </form>
+</section>
+
+<!-- Manual Slot Booking Modal -->
+<div id="booking-modal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <h3 class="modal-title">Reserve Slot <span id="modal-slot-id" style="color: #38BDF8;">P01</span></h3>
+            <button type="button" class="btn-close" id="btn-close-modal" aria-label="Close">&times;</button>
+        </div>
+        <form id="booking-form">
+            <input type="hidden" id="form-slot-id" name="slot_id" value="">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="form-driver-name">Driver Full Name *</label>
+                    <input type="text" id="form-driver-name" class="form-control" placeholder="e.g. Ananya Iyer" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="form-vehicle-no">Vehicle Registration Number *</label>
+                    <input type="text" id="form-vehicle-no" class="form-control" placeholder="e.g. KA-05-MM-5678" style="text-transform: uppercase;" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="form-contact-no">Phone Number (Optional)</label>
+                    <input type="tel" id="form-contact-no" class="form-control" placeholder="e.g. +91 99887 76655" autocomplete="off">
+                </div>
+
+                <!-- Dynamic Pricing Preview Card -->
+                <div style="background-color: var(--navy-subtle); border: 1px solid var(--navy-border); border-radius: var(--radius-sm); padding: 1rem; margin-top: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.25rem;">
+                        <span style="font-size: 0.85rem; font-weight: 600; color: #64748B;">Locked-In Tariff:</span>
+                        <span style="font-size: 1.4rem; font-weight: 800; color: var(--navy-darkest);" id="modal-rate-preview">₹50 / hr</span>
+                    </div>
+                    <div style="font-size: 0.78rem; color: #64748B;">
+                        Current Demand Multiplier: <strong id="modal-mult-preview">1.0x (Standard)</strong>
+                    </div>
+                    <p style="font-size: 0.72rem; color: #94A3B8; margin-top: 0.5rem;">
+                        Protected by anti-gouging caps. Your hourly rate will not surge after reservation.
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btn-cancel-modal">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="btn-submit-booking">
+                    <span id="btn-submit-text">Confirm Booking</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Booking Confirmation Modal -->
+<div id="confirmation-modal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-header" style="background-color: #064E3B;">
+            <h3 class="modal-title">🎉 Slot Allocation Confirmed!</h3>
+            <button type="button" class="btn-close" id="btn-close-confirm-modal" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div style="text-align: center; margin-bottom: 1.25rem;">
+                <span style="font-size: 0.8rem; text-transform: uppercase; color: #64748B; font-weight: 700; letter-spacing: 0.05em;">Booking Reference</span>
+                <div id="confirm-ref" style="font-size: 1.5rem; font-weight: 800; font-family: var(--font-mono); color: var(--navy-darkest); background: #F1F5F9; padding: 0.5rem; border-radius: var(--radius-sm); border: 1px dashed #94A3B8; margin: 0.5rem 0;">
+                    BKG-20261025-ABCD1234
+                </div>
+                <p style="font-size: 0.78rem; color: #64748B;">Save or screenshot this reference to check-out or cancel.</p>
+            </div>
+
+            <div style="border-top: 1px solid #E2E8F0; padding-top: 1rem; font-size: 0.88rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #64748B;">Allocated Slot:</span>
+                    <strong id="confirm-slot">A-01 (Zone A)</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #64748B;">Driver Name:</span>
+                    <strong id="confirm-driver">Rohan Sharma</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #64748B;">Vehicle Number:</span>
+                    <strong id="confirm-vehicle" style="font-family: var(--font-mono);">KA-01-AB-1234</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #64748B;">Locked Rate:</span>
+                    <strong id="confirm-rate" style="color: #059669;">₹60 / hr</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #64748B;">Allocation Timestamp:</span>
+                    <span id="confirm-time">Just now</span>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer" style="justify-content: space-between;">
+            <button type="button" class="btn btn-danger btn-sm" id="btn-cancel-from-confirm">
+                Cancel Booking & Free Slot
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="window.print();">
+                🖨️ Print Receipt
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/booking.js') }}"></script>
+{% endblock %}

@@ -1,261 +1,163 @@
-"""
-test_booking.py - Functional Tests for Parking Allocation, Cancellation & Schema Integrity.
-
-Verifies:
-- Application startup & health
-- Idempotent 12-slot initialization (P01..P12)
-- Successful booking of available slots
-- Rejection of occupied slots (409 Conflict)
-- Cancellation & timestamp recording
-- Rebooking released slots
-- Audit trail preservation
-- Validation errors and malformed requests
-"""
-
-import os
-import tempfile
 import pytest
-from app import create_app
-from database import get_connection, get_all_slots, get_recent_history, TOTAL_CONFIGURED_SLOTS
+from app.models import db, ParkingZone, ParkingSlot, Booking
 
 
-@pytest.fixture
-def test_client():
-    """Create an isolated test application instance with a fresh temporary SQLite database."""
-    db_fd, db_path = tempfile.mkstemp(suffix=".db")
-    os.close(db_fd)
+class TestApplicationEndpoints:
+    """Verify application pages and core health endpoints."""
 
-    app = create_app({
-        "TESTING": True,
-        "DATABASE_PATH": db_path,
-        "SECRET_KEY": "test-key"
-    })
-
-    with app.test_client() as client:
-        yield client, db_path
-
-    # Cleanup temporary test database files
-    for ext in ["", "-wal", "-shm"]:
-        p = db_path + ext
-        if os.path.exists(p):
-            try:
-                os.remove(p)
-            except OSError:
-                pass
-
-
-class TestApplicationAndSlots:
-    """Tests application startup, healthcheck, and slot initialization."""
-
-    def test_startup_and_health(self, test_client):
-        client, _ = test_client
+    def test_health_check(self, client):
         res = client.get("/api/health")
         assert res.status_code == 200
         data = res.get_json()
         assert data["status"] == "healthy"
+        assert "database_engine" in data
 
-    def test_dashboard_renders(self, test_client):
-        client, _ = test_client
-        res = client.get("/")
-        assert res.status_code == 200
-        assert b"Urban Parking Allocator" in res.data
-
-    def test_twelve_slots_initialized(self, test_client):
-        client, db_path = test_client
-        res = client.get("/api/slots")
-        assert res.status_code == 200
-        data = res.get_json()
-        assert data["success"] is True
-        assert data["total"] == TOTAL_CONFIGURED_SLOTS
-        assert len(data["data"]) == TOTAL_CONFIGURED_SLOTS
-
-        slot_ids = [s["slot_id"] for s in data["data"]]
-        expected_ids = [f"P{i:02d}" for i in range(1, 13)]
-        assert slot_ids == expected_ids
-
-        # All slots must initially be AVAILABLE
-        for slot in data["data"]:
-            assert slot["status"] == "AVAILABLE"
-            assert slot["is_available"] is True
-            assert slot["active_booking"] is None
+    def test_page_renders(self, client):
+        for path in ["/", "/availability", "/book", "/analytics", "/about"]:
+            res = client.get(path)
+            assert res.status_code == 200, f"Page {path} failed to render (status {res.status_code})"
 
 
 class TestBookingWorkflow:
-    """Tests the complete lifecycle of booking, rejecting occupied, cancelling, and rebooking."""
+    """Verify booking allocation, rejection, and cancellation lifecycle."""
 
-    def test_book_available_slot(self, test_client):
-        client, _ = test_client
+    def test_book_available_slot_success(self, app, client):
+        with app.app_context():
+            # Find an available slot
+            slot = ParkingSlot.query.filter_by(status="AVAILABLE").first()
+            assert slot is not None
+            slot_id = slot.id
+            slot_num = slot.slot_number
+
+        # Submit booking
         payload = {
-            "slot_id": "P01",
-            "user_name": "Rohan Sharma",
-            "vehicle_number": "KA-01-AB-1234"
+            "slot_id": slot_id,
+            "driver_name": "Test Driver",
+            "vehicle_number": "KA-01-AB-9999",
+            "contact_number": "+91-9876543210"
         }
         res = client.post("/api/book", json=payload)
         assert res.status_code == 201
         data = res.get_json()
         assert data["success"] is True
-        bkg = data["booking"]
-        assert bkg["slot_id"] == "P01"
-        assert bkg["user_name"] == "Rohan Sharma"
-        assert bkg["vehicle_number"] == "KA-01-AB-1234"
-        assert bkg["status"] == "ACTIVE"
-        assert bkg["hourly_rate"] == 50  # 0/12 occupied at time of quote
+        assert data["booking"]["slot_number"] == slot_num
+        assert data["booking"]["status"] == "ACTIVE"
 
-        # Verify slot status changed to OCCUPIED
-        slot_res = client.get("/api/slots")
-        slots = {s["slot_id"]: s for s in slot_res.get_json()["data"]}
-        assert slots["P01"]["status"] == "OCCUPIED"
-        assert slots["P01"]["is_available"] is False
-        assert slots["P01"]["active_booking"]["booking_id"] == bkg["booking_id"]
+        # Verify database state
+        with app.app_context():
+            updated_slot = db.session.get(ParkingSlot, slot_id)
+            assert updated_slot.status == "OCCUPIED"
+            bkg = Booking.query.filter_by(booking_reference=data["booking"]["booking_reference"]).first()
+            assert bkg is not None
+            assert bkg.status == "ACTIVE"
 
-    def test_reject_booking_occupied_slot(self, test_client):
-        client, _ = test_client
-        # 1. Book P02
-        client.post("/api/book", json={
-            "slot_id": "P02",
-            "user_name": "First Driver",
-            "vehicle_number": "KA-02-1111"
-        })
+    def test_reject_booking_occupied_slot(self, app, client):
+        with app.app_context():
+            occupied_slot = ParkingSlot.query.filter_by(status="OCCUPIED").first()
+            assert occupied_slot is not None
+            slot_id = occupied_slot.id
 
-        # 2. Attempt to book P02 again
-        res2 = client.post("/api/book", json={
-            "slot_id": "P02",
-            "user_name": "Second Driver",
-            "vehicle_number": "DL-01-2222"
-        })
-        assert res2.status_code == 409
-        data2 = res2.get_json()
-        assert data2["success"] is False
-        assert data2["error"] == "SLOT_ALREADY_OCCUPIED"
+        payload = {
+            "slot_id": slot_id,
+            "driver_name": "Second Driver",
+            "vehicle_number": "MH-02-CD-5555"
+        }
+        res = client.post("/api/book", json=payload)
+        assert res.status_code == 409
+        data = res.get_json()
+        assert data["success"] is False
+        assert data["error"] == "SLOT_ALREADY_OCCUPIED"
 
-    def test_cancel_active_booking(self, test_client):
-        client, _ = test_client
-        # Book P03
-        bkg_res = client.post("/api/book", json={
-            "slot_id": "P03",
-            "user_name": "Amit Verma",
-            "vehicle_number": "MH-12-PQ-9999"
-        })
-        booking_id = bkg_res.get_json()["booking"]["booking_id"]
+    def test_auto_allocate_slot(self, app, client):
+        with app.app_context():
+            zone = ParkingZone.query.filter_by(code="ZONE-A").first()
+            assert zone is not None
+            zone_id = zone.id
 
-        # Cancel booking
-        cancel_res = client.post("/api/cancel", json={"booking_id": booking_id})
-        assert cancel_res.status_code == 200
-        cancel_data = cancel_res.get_json()
-        assert cancel_data["success"] is True
-        assert cancel_data["slot_id"] == "P03"
+        payload = {
+            "zone_id": zone_id,
+            "driver_name": "Auto Driver",
+            "vehicle_number": "DL-01-AUTO-11"
+        }
+        res = client.post("/api/auto-allocate", json=payload)
+        assert res.status_code == 201
+        data = res.get_json()
+        assert data["success"] is True
+        assert "booking" in data
+        assert data["booking"]["status"] == "ACTIVE"
 
-        # Verify slot is back to AVAILABLE
-        slot_res = client.get("/api/slots")
-        slots = {s["slot_id"]: s for s in slot_res.get_json()["data"]}
-        assert slots["P03"]["status"] == "AVAILABLE"
-        assert slots["P03"]["is_available"] is True
+    def test_cancel_active_booking(self, app, client):
+        with app.app_context():
+            active_bkg = Booking.query.filter_by(status="ACTIVE").first()
+            assert active_bkg is not None
+            ref = active_bkg.booking_reference
+            slot_id = active_bkg.slot_id
 
-    def test_rebook_cancelled_slot(self, test_client):
-        client, _ = test_client
-        # Book P04
-        r1 = client.post("/api/book", json={"slot_id": "P04", "user_name": "Driver 1", "vehicle_number": "KA-04-1111"})
-        bkg1_id = r1.get_json()["booking"]["booking_id"]
+        # Cancel the booking
+        res = client.post("/api/cancel", json={"booking_reference": ref})
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["success"] is True
 
-        # Cancel P04
-        client.post("/api/cancel", json={"booking_id": bkg1_id})
+        # Verify slot is released back to AVAILABLE
+        with app.app_context():
+            slot = db.session.get(ParkingSlot, slot_id)
+            assert slot.status == "AVAILABLE"
+            cancelled_bkg = Booking.query.filter_by(booking_reference=ref).first()
+            assert cancelled_bkg.status == "CANCELLED"
+            assert cancelled_bkg.cancelled_at is not None
 
-        # Re-book P04 with different driver
-        r2 = client.post("/api/book", json={"slot_id": "P04", "user_name": "Driver 2", "vehicle_number": "KA-04-2222"})
-        assert r2.status_code == 201
-        data2 = r2.get_json()
-        assert data2["success"] is True
-        assert data2["booking"]["slot_id"] == "P04"
-        assert data2["booking"]["user_name"] == "Driver 2"
+    def test_double_cancellation_rejected(self, app, client):
+        with app.app_context():
+            active_bkg = Booking.query.filter_by(status="ACTIVE").first()
+            assert active_bkg is not None
+            ref = active_bkg.booking_reference
 
-    def test_preserve_booking_audit_history(self, test_client):
-        client, db_path = test_client
-        # Book and cancel
-        r = client.post("/api/book", json={"slot_id": "P05", "user_name": "Audit Test", "vehicle_number": "HR-26-8888"})
-        bkg_id = r.get_json()["booking"]["booking_id"]
-        client.post("/api/cancel", json={"booking_id": bkg_id})
+        # First cancellation
+        res1 = client.post("/api/cancel", json={"booking_reference": ref})
+        assert res1.status_code == 200
 
-        # Fetch history via API
-        h_res = client.get("/api/history")
-        assert h_res.status_code == 200
-        history = h_res.get_json()["data"]
-        assert len(history) >= 1
-
-        record = next((item for item in history if item["booking_id"] == bkg_id), None)
-        assert record is not None
-        assert record["status"] == "CANCELLED"
-        assert record["cancelled_at"] is not None
-        assert record["slot_id"] == "P05"
-
-    def test_occupancy_and_surge_updates_after_bookings(self, test_client):
-        client, _ = test_client
-        # Initial stats: 0 occupied, ₹50
-        s0 = client.get("/api/status").get_json()["data"]
-        assert s0["occupied_slots"] == 0
-        assert s0["hourly_rate"] == 50
-
-        # Book 6 slots (50% occupancy)
-        for i in range(1, 7):
-            client.post("/api/book", json={
-                "slot_id": f"P{i:02d}",
-                "user_name": f"User {i}",
-                "vehicle_number": f"V-{i}"
-            })
-
-        s6 = client.get("/api/status").get_json()["data"]
-        assert s6["occupied_slots"] == 6
-        assert s6["occupancy_percentage"] == 50.0
-        assert s6["hourly_rate"] == 75  # Moderate surge triggered
-
-        # Book 4 more slots (total 10 occupied = 83.3% occupancy)
-        for i in range(7, 11):
-            client.post("/api/book", json={
-                "slot_id": f"P{i:02d}",
-                "user_name": f"User {i}",
-                "vehicle_number": f"V-{i}"
-            })
-
-        s10 = client.get("/api/status").get_json()["data"]
-        assert s10["occupied_slots"] == 10
-        assert s10["occupancy_percentage"] == 83.3
-        assert s10["hourly_rate"] == 100  # Peak surge triggered
+        # Second cancellation attempt
+        res2 = client.post("/api/cancel", json={"booking_reference": ref})
+        assert res2.status_code == 400
+        data = res2.get_json()
+        assert data["error"] == "ALREADY_PROCESSED"
 
 
 class TestValidationAndErrors:
-    """Tests bad requests, unknown slots, and edge conditions."""
+    """Verify input validation and bad request handling."""
 
-    def test_invalid_slot_id_rejected(self, test_client):
-        client, _ = test_client
-        res = client.post("/api/book", json={
-            "slot_id": "P99",
-            "user_name": "Test",
-            "vehicle_number": "XX-00"
-        })
-        assert res.status_code == 404
-        assert res.get_json()["error"] == "SLOT_NOT_FOUND"
-
-    def test_missing_fields_rejected(self, test_client):
-        client, _ = test_client
-        res = client.post("/api/book", json={"slot_id": "P01"})
+    def test_missing_driver_name_rejected(self, client):
+        payload = {
+            "slot_id": 1,
+            "driver_name": "",
+            "vehicle_number": "KA-01-AB-1234"
+        }
+        res = client.post("/api/book", json=payload)
         assert res.status_code == 400
-        assert res.get_json()["error"] == "VALIDATION_ERROR"
+        data = res.get_json()
+        assert data["error"] == "VALIDATION_ERROR"
 
-    def test_cancel_nonexistent_booking(self, test_client):
-        client, _ = test_client
-        res = client.post("/api/cancel", json={"booking_id": "NONEXISTENT-ID"})
+    def test_missing_vehicle_number_rejected(self, client):
+        payload = {
+            "slot_id": 1,
+            "driver_name": "Valid Driver",
+            "vehicle_number": ""
+        }
+        res = client.post("/api/book", json=payload)
+        assert res.status_code == 400
+        data = res.get_json()
+        assert data["error"] == "VALIDATION_ERROR"
+
+    def test_nonexistent_slot_rejected(self, client):
+        payload = {
+            "slot_id": 99999,
+            "driver_name": "Valid Driver",
+            "vehicle_number": "KA-01-AB-1234"
+        }
+        res = client.post("/api/book", json=payload)
         assert res.status_code == 404
-        assert res.get_json()["error"] == "BOOKING_NOT_FOUND"
 
-    def test_cancel_already_cancelled_booking(self, test_client):
-        client, _ = test_client
-        r = client.post("/api/book", json={"slot_id": "P06", "user_name": "Test", "vehicle_number": "XX-11"})
-        bkg_id = r.get_json()["booking"]["booking_id"]
-
-        # Cancel once -> 200
-        res1 = client.post("/api/cancel", json={"booking_id": bkg_id})
-        assert res1.status_code == 200
-
-        # Cancel again -> 400 ALREADY_CANCELLED
-        res2 = client.post("/api/cancel", json={"booking_id": bkg_id})
-        assert res2.status_code == 400
-        assert res2.get_json()["error"] == "ALREADY_CANCELLED"
+    def test_cancel_nonexistent_booking_rejected(self, client):
+        res = client.post("/api/cancel", json={"booking_reference": "BKG-NON-EXISTENT"})
+        assert res.status_code == 404

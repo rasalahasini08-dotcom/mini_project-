@@ -1,138 +1,131 @@
 # College Mini-Project Review & Viva Guide
-## Concurrency-Safe Urban Parking Allocator With Surge Analytics
 
-This document is prepared to help you confidently present and demonstrate your project to college faculty, reviewers, and external examiners during the mini-project review.
-
----
-
-## 🎯 1. Key Concept Explanations (What to say to Faculty)
-
-### Q1: What problem does this project solve?
-> **Answer:**
-> "In smart city parking systems, multiple users or automated vehicle navigation systems frequently attempt to book the same vacant parking bay simultaneously. Conventional applications suffer from race conditions where two users read the slot as available and both end up booking it.
->
-> Our project solves this by guaranteeing **concurrency-safe parking allocation** with zero duplicate bookings, combined with **dynamic surge pricing analytics** that adjust hourly parking rates based on real-time occupancy to mitigate bay congestion."
+**Project Title:** Concurrency-Safe Urban Parking Allocator With Surge Analytics  
+**Domain:** Distributed Systems, Web Engineering, Database Concurrency & Urban Mobility  
+**Framework:** Python Flask, SQLAlchemy ORM, Chart.js, SQLite / PostgreSQL  
 
 ---
 
-### Q2: Why is concurrency safety necessary, and what is a race condition here?
-> **Answer:**
-> "A race condition occurs when the system's outcome depends on the non-deterministic timing or interleaving of competing threads.
-> 
-> Without concurrency control:
-> - User A and User B check slot `P01` at the same microsecond.
-> - Both queries return `status == 'AVAILABLE'`.
-> - User A updates the slot to `OCCUPIED`.
-> - User B also updates the slot to `OCCUPIED` and creates a second active booking.
-> 
-> Concurrency safety is necessary to preserve **ACID consistency and isolation**, ensuring that a physical parking bay can only ever be allocated to exactly one driver at a time."
+## 1. Quick Demonstration Script (For 5-10 Minute Presentation)
+
+### Step 1: System Overview (1 Minute)
+1. Open the Home Page (`http://127.0.0.1:5000/`).
+2. Point out the live metric ribbon: Total Capacity, Available Slots, Occupied Slots, Overall City Occupancy %, and Active Vehicles.
+3. Explain that the city is divided into **4 distinct metropolitan zones** (Downtown, Silicon Tech Park, Metro Interchange, Airport Aerocity) with different capacities, amenities, and base hourly tariffs.
+
+### Step 2: Zone Availability & Dynamic Surge Pricing (2 Minutes)
+1. Navigate to **Availability** (`/availability`).
+2. Show the filter dropdowns: filter by Zone or Demand Level.
+3. Point out Zone B (Silicon Tech Park): with 8 out of 10 slots occupied (80%), the demand level is **High Demand (1.6x multiplier)** and the tariff has dynamically increased from ₹50/hr to ₹80/hr.
+4. Point out Zone C (Metro Interchange): with only 25% occupancy, it operates at **Standard Base Tariff (1.0x)** at ₹40/hr.
+5. Emphasize: *The pricing is 100% data-driven and computed directly from database occupancy via the formula `(Occupied / Total) × 100` with anti-gouging caps (1.0x to 2.0x).*
+
+### Step 3: Concurrency-Safe Booking & Instant Cancellation (3 Minutes)
+1. Navigate to **Book Parking** (`/book`).
+2. Select Zone A. Point out the interactive visual bay layout with green (Available), red (Occupied), and yellow (Maintenance) slots.
+3. Click an available slot (e.g. `A-07`).
+4. Show the modal with locked-in rate preview (₹78/hr, 1.3x Moderate Surge).
+5. Enter driver name (`Rohan Sharma`) and vehicle number (`KA-01-AB-1234`). Click **Confirm Booking**.
+6. The booking is instantly confirmed with a unique reference code (e.g. `BKG-20261025-XXXXXX`).
+7. Point out that slot `A-07` on the visual grid immediately updates to red **OCCUPIED**.
+8. Show the cancellation feature: enter the reference in the Lookup & Cancel section and click **Release / Cancel Slot**.
+9. Slot `A-07` instantly reverts to green **AVAILABLE** in the database.
+
+### Step 4: Analytics Dashboard (1.5 Minutes)
+1. Navigate to **Analytics** (`/analytics`).
+2. Showcase the 4 interactive Chart.js charts:
+   - **Zone Capacity & Occupancy:** Stacked bar chart showing vacant vs parked vehicles per zone.
+   - **Dynamic Tariff & Multiplier:** Current price per hour per zone.
+   - **Metropolitan Distribution:** Donut chart of city-wide bay status.
+   - **Urban Mobility Curve:** Hourly occupancy trend throughout peak rush hours.
+3. Click **Refresh Analytics Data** to show dynamic API re-fetching without full-page reloads.
+
+### Step 5: Administrator Panel (1.5 Minutes)
+1. Click **Admin Login** (`/admin/login`).
+2. Log in with `admin` / `Admin@12345`.
+3. Show the executive dashboard with cumulative revenue, active parked vehicles, and recent transaction records.
+4. Show **Manage Zones**: demonstrate adding a new zone or toggling active status.
+5. Show **Manage Slots**: demonstrate setting a slot to `MAINTENANCE` hold or clearing an occupied slot.
+6. Show **Booking Audit Log**: search by vehicle registration number or filter by status.
+
+### Step 6: Automated Concurrency Verification (1 Minute)
+1. Switch to terminal/command prompt.
+2. Run: `pytest -v`
+3. Show that all **32 automated tests pass in ~5 seconds**, including the 12-thread simultaneous race condition stress test where exactly 1 thread wins and 11 are cleanly rejected.
 
 ---
 
-### Q3: How exactly does your system prevent simultaneous booking conflicts?
-> **Answer:**
-> "We implement a **3-tier defensive architecture**:
-> 1. **Immediate Write Locking (`BEGIN IMMEDIATE`):**
->    Standard SQLite transactions are deferred (`DEFERRED`), delaying locks until write operations. We use `BEGIN IMMEDIATE` to immediately reserve a write lock, serializing competing booking transactions while allowing concurrent reads.
-> 2. **Atomic Conditional SQL Update:**
->    ```sql
->    UPDATE parking_slots
->    SET status = 'OCCUPIED', updated_at = ?
->    WHERE slot_id = ? AND status = 'AVAILABLE';
->    ```
->    This is the core synchronization primitive. Even if two threads execute this statement simultaneously, the database engine executes it atomically. Exactly one transaction gets `cursor.rowcount == 1` (the winner). The second transaction gets `cursor.rowcount == 0` because the slot is no longer `'AVAILABLE'`. The backend catches this, executes a clean rollback, and returns a controlled `HTTP 409 Conflict`.
-> 3. **Database Partial Unique Index (Defense-in-Depth):**
->    ```sql
->    CREATE UNIQUE INDEX idx_active_slot_booking ON bookings(slot_id) WHERE status = 'ACTIVE';
->    ```
->    At the schema level, SQLite will physically reject any attempt to insert two bookings with `status = 'ACTIVE'` for the same slot with an `sqlite3.IntegrityError`."
+## 2. Key Code Files Roadmap
+
+| Feature | Primary Source Files |
+|---|---|
+| **Database Models & Constraints** | `app/models.py` (`AdminUser`, `ParkingZone`, `ParkingSlot`, `Booking`, partial index `idx_active_slot_booking`) |
+| **Concurrency & Allocation Logic** | `app/services/allocation_service.py` (`allocate_slot`, `auto_allocate_slot`, `cancel_booking_by_reference`) |
+| **Surge Pricing Algorithm** | `app/services/pricing_service.py` (`calculate_surge_multiplier`, `compute_zone_pricing`, `PRICING_TIERS`) |
+| **Application Factory & Config** | `app/__init__.py`, `config.py`, `wsgi.py` |
+| **Frontend UI Templates** | `templates/base.html`, `templates/index.html`, `templates/availability.html`, `templates/book.html`, `templates/analytics.html`, `templates/about.html`, `templates/admin/` |
+| **Interactive JavaScript** | `static/js/main.js`, `static/js/booking.js`, `static/js/analytics.js` |
+| **Automated Tests** | `tests/test_concurrency.py`, `tests/test_booking.py`, `tests/test_pricing.py`, `tests/test_admin.py`, `tests/test_rollback.py` |
 
 ---
 
-### Q4: How are occupancy percentage and surge pricing calculated?
-> **Answer:**
-> "Occupancy is computed from active database rows:
-> $$\text{Occupancy \%} = \left(\frac{\text{Occupied Slots}}{\text{Total Active Slots}}\right) \times 100$$
-> For our 12-slot bay, the hourly rate transitions dynamically:
-> - **Occupancy < 50% (0 to 5 occupied slots):** Standard Tier = **₹50 / hr**
-> - **Occupancy 50% to < 80% (6 to 9 occupied slots):** Moderate Surge (1.5x) = **₹75 / hr**
-> - **Occupancy ≥ 80% (10 to 12 occupied slots):** Peak Surge (2.0x) = **₹100 / hr**
-> 
-> The pricing is calculated by an isolated module (`pricing.py`) and is locked into the booking record at confirmation time so the driver's bill is fixed upon booking."
+## 3. Top Examiner Viva Questions & Detailed Answers
+
+### Q1: What is a Race Condition in parking allocation, and how did you prevent it?
+**Examiner's Intent:** To check if you understand multi-threading, concurrency hazards, and database synchronization.  
+**Answer:**  
+A race condition occurs when two or more concurrent processes query the database at the same instant, both observe that a parking slot has `status = 'AVAILABLE'`, and both attempt to reserve it. Without concurrency controls, both transactions commit, causing a double-booking.  
+We prevented this using a multi-layer defense:
+1. **Row-Level Locking in PostgreSQL:** We use SQLAlchemy's `with_for_update()` to place an exclusive write lock on the target slot row during the transaction.
+2. **Atomic Conditional Updates in SQLite & PostgreSQL:** We execute:
+   ```sql
+   UPDATE parking_slots SET status = 'OCCUPIED' WHERE id = :slot_id AND status = 'AVAILABLE';
+   ```
+   The database engine evaluates this condition atomically. If two threads run this simultaneously, exactly one thread sees `rowcount == 1`. The second thread sees `rowcount == 0` and is safely aborted with an HTTP 409 Conflict.
+3. **Database Schema Partial Unique Index:** We enforced:
+   ```sql
+   CREATE UNIQUE INDEX idx_active_slot_booking ON bookings(slot_id) WHERE status = 'ACTIVE';
+   ```
+   Even if application code had a flaw, the physical database engine strictly forbids two simultaneous ACTIVE bookings for the same slot.
 
 ---
 
-### Q5: What do database transactions do in your project?
-> **Answer:**
-> "Transactions provide **ACID properties**:
-> - **Atomicity:** When booking a slot, two operations must happen together: updating `parking_slots` to `OCCUPIED` and inserting a new row into `bookings`. If either operation fails, the transaction is rolled back, preventing orphaned bookings or ghost occupied slots.
-> - **Consistency:** Enforced by schema foreign keys, CHECK constraints (`status IN ('AVAILABLE', 'OCCUPIED')`), and the partial unique index.
-> - **Isolation:** Transactions run in serializable write isolation using `BEGIN IMMEDIATE` with `WAL` mode.
-> - **Durability:** Committed transactions are flushed to disk."
+### Q2: Why did you not just use Python's `threading.Lock()` or `asyncio`?
+**Examiner's Intent:** To test if you understand the difference between single-process threading and multi-process WSGI production deployment.  
+**Answer:**  
+In production, Flask runs under a WSGI application server like **Gunicorn** with multiple worker processes (`gunicorn --workers 2 --threads 4`).  
+Each Gunicorn worker is an independent operating system process with its own separate address space. An in-memory lock (`threading.Lock()`) only synchronizes threads inside Worker #1. If Request A arrives at Worker #1 and Request B arrives at Worker #2 at the same time, Worker #2 has no knowledge of Worker #1's lock. They would both execute the booking and create a double-booking.  
+Therefore, concurrency synchronization **must** happen at the database level where state is centralized and ACID compliance is guaranteed.
 
 ---
 
-### Q6: How was the project tested?
-> **Answer:**
-> "We developed an automated test suite containing **24 tests** using Pytest:
-> - **Functional Tests:** App startup, 12-slot seeding, booking, cancellation, rebooking, and audit trail retention.
-> - **Boundary Value Tests:** Evaluated 0%, 49%, 50%, 79%, 80%, and 100% occupancy thresholds.
-> - **Concurrent Stress Testing (`test_concurrency.py`):** We used Python's `ThreadPoolExecutor` and `threading.Barrier` to launch 12 parallel threads targeting slot `P01` at the exact same millisecond. The test verified that **exactly 1 thread succeeded** (HTTP 201), **11 threads were safely rejected** (HTTP 409), and direct SQL inspection verified only 1 active booking existed in the database."
+### Q3: Explain how the dynamic surge pricing algorithm works.
+**Examiner's Intent:** To evaluate if your pricing model is legitimate, mathematical, and transparent.  
+**Answer:**  
+Our surge pricing engine is occupancy-elastic:
+$$\text{Occupancy \%} = \left(\frac{\text{Occupied Slots}}{\text{Total Slots}}\right) \times 100$$
+We define 4 policy tiers:
+- **Standard Tier (< 50%):** 1.0x multiplier (baseline fee).
+- **Moderate Tier (50% to 74%):** 1.3x multiplier (+30% surge to balance vehicle turnover).
+- **High Demand Tier (75% to 89%):** 1.6x multiplier (+60% surge).
+- **Peak Surge Tier (>= 90%):** 2.0x multiplier (+100% surge cap).
+
+Tariffs are protected by anti-gouging bounds (clamped between 1.0x and 2.0x). The rate computed at the exact instant of booking is permanently locked into the driver's booking record so their fee does not increase after reserving.
 
 ---
 
-## 🎬 2. Practical Live Demonstration Sequence
-
-Follow this sequence during your project presentation:
-
-1. **Open the Dashboard:**
-   - Show the 12 clean parking slots (`P01` to `P12`), all showing green (`Available`).
-   - Point out the metrics: Total: 12, Available: 12, Occupied: 0, Occupancy: 0%, Rate: ₹50/hr (Standard Tier highlighted).
-
-2. **Demonstrate a Normal Booking:**
-   - Click "Book Slot" on `P01`.
-   - Enter Driver Name ("Rohan Sharma") and Vehicle ("KA-01-AB-1234").
-   - Click "Confirm Booking".
-   - Show the toast alert confirming booking.
-   - Point out that `P01` turns red (`Occupied`) displaying the driver's details and locked rate.
-   - Show that Available is now 11, Occupied is 1, Occupancy is 8.3%.
-   - Point out the new entry in the Recent Allocation Audit Trail table.
-
-3. **Demonstrate Dynamic Surge Pricing:**
-   - Book 5 more slots (`P02` through `P06`).
-   - Occupancy reaches 50.0% (6/12 occupied).
-   - Point out that the Hourly Rate automatically jumps to **₹75/hr** and the "Moderate Surge" tier card is now highlighted.
-   - Book 4 more slots (`P07` through `P10`).
-   - Occupancy reaches 83.3% (10/12 occupied).
-   - Point out that the Hourly Rate automatically jumps to **₹100/hr** and the "Peak Surge" tier card is highlighted.
-
-4. **Demonstrate Cancellation & Rebooking:**
-   - Click "Release Slot" on `P01`.
-   - Confirm cancellation.
-   - Point out that `P01` immediately turns green (`Available`).
-   - Show that in the Audit Trail table, the booking status changed to `CANCELLED` with a cancellation timestamp (data is preserved for audit purposes).
-   - Book `P01` again with a different vehicle to prove released slots can be reused.
-
-5. **Demonstrate Automated Concurrency Verification:**
-   - Open a terminal and run:
-     ```bash
-     pytest tests/test_concurrency.py -v
-     ```
-   - Show the examiners the 12-thread simultaneous race test passing with 1 winner and 11 controlled rejections.
-   - Run the full suite:
-     ```bash
-     pytest -v
-     ```
-   - All 24 tests pass in under 3 seconds!
+### Q4: How is administrative access secured?
+**Examiner's Intent:** To test web security best practices (passwords, sessions, auth guards).  
+**Answer:**  
+1. Passwords are never stored in plain text. They are hashed using `werkzeug.security.generate_password_hash` using PBKDF2 with SHA256 and salt.
+2. Protected routes are guarded by a custom `@admin_required` Python decorator that checks `session.get('admin_logged_in')`.
+3. If an unauthenticated user attempts to access `/admin/dashboard`, they are redirected with HTTP 302 to `/admin/login`.
+4. When the admin logs out, `session.clear()` is called to destroy the session cookie.
 
 ---
 
-## 💡 3. Likely Faculty Questions & Short Sharp Answers
-
-| Faculty Question | Recommended Answer |
-| :--- | :--- |
-| **Why SQLite instead of MySQL/PostgreSQL?** | SQLite is serverless, zero-configuration, and has ACID transaction compliance. For single-server deployments, SQLite in WAL mode can handle hundreds of writes per second with low overhead. The code is modular so switching to PostgreSQL is a 1-line connection swap. |
-| **What happens if two drivers click "Book" at the same time?** | The atomic update query `UPDATE parking_slots SET status = 'OCCUPIED' WHERE slot_id = ? AND status = 'AVAILABLE'` resolves this. The database guarantees atomicity: only one thread receives `rowcount == 1`. The loser receives `rowcount == 0` and is cleanly rejected with a 409 Conflict. |
-| **Why not just check if the slot is free in Python code with `if slot.is_available:`?** | That is the classic "check-then-act" anti-pattern. Between the time Python checks the status and the time Python executes the write, another thread can interleave and book the slot. The check and the lock must be atomic inside the database engine. |
-| **Why does SQLite WAL mode matter?** | Default SQLite locks the entire database file during writes, blocking readers. WAL (Write-Ahead Logging) separates reads and writes, allowing concurrent readers to read the database without blocking while a write transaction is committing. |
-| **What happens if a booking is cancelled? Is the history deleted?** | No. We never perform hard DELETEs on bookings. The booking is marked `CANCELLED` and timestamped (`cancelled_at`), releasing the slot back to `AVAILABLE`. This maintains an audit trail. |
+### Q5: How do you handle transaction rollback if an error occurs midway?
+**Examiner's Intent:** To evaluate ACID atomicity and error resilience.  
+**Answer:**  
+In `app/services/allocation_service.py`, the entire booking operation is wrapped in a `try...except` block with explicit `db.session.rollback()`.  
+If an exception occurs (such as an IntegrityError, database timeout, or hardware error) after the slot status is updated but before the booking is committed, `db.session.rollback()` reverts all pending changes. The slot remains `AVAILABLE` and no orphan booking is saved. This is verified by our automated test in `tests/test_rollback.py`.

@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+
+{% block title %}Parking Zone Availability | Urban Parking Allocator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Parking Zone Availability</h1>
+        <p class="page-subtitle">Real-time metropolitan bay capacity, current surge tariffs, and slot occupancy retrieved live from the database</p>
+    </div>
+    <div style="display: flex; gap: 0.75rem;">
+        <a href="{{ url_for('booking.book_page') }}" class="btn btn-primary">
+            🚗 Book Parking Slot
+        </a>
+    </div>
+</div>
+
+<!-- Filter Controls -->
+<section class="section-card" style="padding: 1.25rem; margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+            <label style="font-size: 0.85rem; font-weight: 700; color: var(--navy-darkest);">Filter Zones:</label>
+            <select id="filter-zone" class="form-control" style="width: auto; min-width: 180px;">
+                <option value="ALL">All Zones</option>
+                {% for z in zones %}
+                    <option value="{{ z.code }}">{{ z.code }} - {{ z.name }}</option>
+                {% endfor %}
+            </select>
+
+            <select id="filter-status" class="form-control" style="width: auto; min-width: 180px;">
+                <option value="ALL">All Demand Levels</option>
+                <option value="Standard">Standard (&lt; 50%)</option>
+                <option value="Moderate">Moderate (50-74%)</option>
+                <option value="High">High Demand (75-89%)</option>
+                <option value="Peak Surge">Peak Surge (&ge; 90%)</option>
+            </select>
+        </div>
+
+        <div style="font-size: 0.85rem; color: var(--slate-muted);">
+            Showing <strong id="filter-count">{{ zone_summaries|length }}</strong> active urban zones
+        </div>
+    </div>
+</section>
+
+<!-- Zone Cards Grid -->
+<section class="zones-grid" id="zones-container">
+    {% for zone in zone_summaries %}
+    <div class="zone-card" data-zone-code="{{ zone.zone_code }}" data-demand="{{ zone.demand_level }}">
+        <div>
+            <div class="zone-header">
+                <span class="zone-code">{{ zone.zone_code }}</span>
+                <span class="badge {{ zone.badge_class }}">{{ zone.demand_level }}</span>
+            </div>
+            <h3 class="zone-name">{{ zone.zone_name }}</h3>
+            <p class="zone-location">📍 {{ zones[loop.index0].location }}</p>
+
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill {% if zone.occupancy_percentage >= 85 %}danger{% elif zone.occupancy_percentage >= 50 %}warning{% endif %}" style="width: {{ zone.occupancy_percentage }}%;"></div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; text-align: center; margin: 1rem 0; background: var(--navy-subtle); padding: 0.75rem 0.5rem; border-radius: var(--radius-sm);">
+                <div>
+                    <span style="font-size: 0.72rem; text-transform: uppercase; color: #64748B; font-weight: 600; display: block;">Total</span>
+                    <strong style="font-size: 1.1rem; color: var(--navy-darkest);">{{ zone.total_slots }}</strong>
+                </div>
+                <div>
+                    <span style="font-size: 0.72rem; text-transform: uppercase; color: #64748B; font-weight: 600; display: block;">Occupied</span>
+                    <strong style="font-size: 1.1rem; color: var(--danger-color);">{{ zone.occupied_slots }}</strong>
+                </div>
+                <div>
+                    <span style="font-size: 0.72rem; text-transform: uppercase; color: #64748B; font-weight: 600; display: block;">Available</span>
+                    <strong style="font-size: 1.1rem; color: var(--success-color);">{{ zone.available_slots }}</strong>
+                </div>
+            </div>
+
+            <p class="zone-amenities">
+                <strong>Amenities:</strong> {{ zones[loop.index0].amenities }}
+            </p>
+        </div>
+
+        <div>
+            <div class="zone-pricing-row">
+                <div>
+                    <span style="font-size: 0.75rem; text-transform: uppercase; color: #64748B; font-weight: 600;">Current Tariff</span>
+                    <div class="zone-rate-value">₹{{ zone.effective_rate }}<span style="font-size: 0.8rem; font-weight: 500; color: #64748B;"> / hr</span></div>
+                </div>
+                <div style="text-align: right;">
+                    <span class="badge badge-neutral">{{ zone.multiplier }}x Multiplier</span>
+                    <span style="display: block; font-size: 0.75rem; color: #64748B; margin-top: 0.2rem;">Base: ₹{{ zone.base_rate }}/hr</span>
+                </div>
+            </div>
+
+            <a href="{{ url_for('booking.book_page', zone_id=zone.zone_id) }}" class="btn btn-primary" style="width: 100%;">
+                Select & Book in {{ zone.zone_code }} &rarr;
+            </a>
+        </div>
+    </div>
+    {% endfor %}
+</section>
+
+<!-- Detailed Tabular View -->
+<section class="section-card" style="margin-top: 2.5rem;">
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">Comparative Zone Availability Table</h2>
+            <p class="section-subtitle">Database-backed tabular breakdown for high-density overview</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Zone Code</th>
+                    <th>Zone Name & Location</th>
+                    <th>Capacity</th>
+                    <th>Occupied</th>
+                    <th>Available</th>
+                    <th>Occupancy %</th>
+                    <th>Base Rate</th>
+                    <th>Surge Multiplier</th>
+                    <th>Effective Rate</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for z in zone_summaries %}
+                <tr>
+                    <td><span class="zone-code">{{ z.zone_code }}</span></td>
+                    <td>
+                        <strong>{{ z.zone_name }}</strong><br>
+                        <span style="font-size: 0.78rem; color: #64748B;">{{ zones[loop.index0].location }}</span>
+                    </td>
+                    <td><strong>{{ z.total_slots }}</strong></td>
+                    <td style="color: var(--danger-color); font-weight: 600;">{{ z.occupied_slots }}</td>
+                    <td style="color: var(--success-color); font-weight: 700;">{{ z.available_slots }}</td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span>{{ z.occupancy_percentage }}%</span>
+                            <div class="progress-bar-bg" style="width: 60px; margin: 0;">
+                                <div class="progress-bar-fill {% if z.occupancy_percentage >= 85 %}danger{% elif z.occupancy_percentage >= 50 %}warning{% endif %}" style="width: {{ z.occupancy_percentage }}%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>₹{{ z.base_rate }}</td>
+                    <td><strong>{{ z.multiplier }}x</strong></td>
+                    <td><strong style="color: var(--navy-darkest);">₹{{ z.effective_rate }} / hr</strong></td>
+                    <td><span class="badge {{ z.badge_class }}">{{ z.demand_level }}</span></td>
+                    <td>
+                        <a href="{{ url_for('booking.book_page', zone_id=z.zone_id) }}" class="btn btn-primary btn-sm">
+                            Book
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const filterZone = document.getElementById("filter-zone");
+    const filterStatus = document.getElementById("filter-status");
+    const cards = document.querySelectorAll(".zone-card");
+    const countEl = document.getElementById("filter-count");
+
+    function applyFilters() {
+        const selectedZone = filterZone.value;
+        const selectedStatus = filterStatus.value;
+        let visibleCount = 0;
+
+        cards.forEach(card => {
+            const zCode = card.dataset.zoneCode;
+            const demand = card.dataset.demand;
+
+            const matchZone = (selectedZone === "ALL" || zCode === selectedZone);
+            const matchStatus = (selectedStatus === "ALL" || demand === selectedStatus);
+
+            if (matchZone && matchStatus) {
+                card.style.display = "flex";
+                visibleCount++;
+            } else {
+                card.style.display = "none";
+            }
+        });
+
+        if (countEl) countEl.textContent = visibleCount;
+    }
+
+    filterZone.addEventListener("change", applyFilters);
+    filterStatus.addEventListener("change", applyFilters);
+});
+</script>
+{% endblock %}

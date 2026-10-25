@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Architecture & Engineering Workflow | Urban Parking Allocator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">System Architecture & Concurrency Defense</h1>
+        <p class="page-subtitle">Comprehensive technical breakdown of ACID transactions, race condition prevention, and surge analytics modeling</p>
+    </div>
+    <div>
+        <span class="badge badge-info" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">College Mini-Project Review Guide</span>
+    </div>
+</div>
+
+<!-- Architecture & Workflow Diagrams -->
+<section class="section-card">
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">1. End-to-End System Architecture</h2>
+            <p class="section-subtitle">Data flow from driver request to database lock acquisition, transaction commit, and response</p>
+        </div>
+    </div>
+
+    <!-- Allocation Flow Visual Diagram -->
+    <h3 style="font-size: 1rem; color: var(--navy-darkest); margin-bottom: 0.75rem;">A. Concurrency-Safe Allocation Workflow:</h3>
+    <div class="tech-flow-box">
+        <span class="flow-step">1. User Request (POST /api/book)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step">2. Flask Route Validation</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step">3. Allocation Service (Begin ACID Tx)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step">4. DB Row Lock / Atomic UPDATE</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step">5. Check Conflict (rowcount == 1)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step">6. Insert Booking (Active)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step">7. Commit Transaction</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step">8. HTTP 201 Response</span>
+    </div>
+
+    <!-- Analytics Pipeline Diagram -->
+    <h3 style="font-size: 1rem; color: var(--navy-darkest); margin: 1.5rem 0 0.75rem 0;">B. Dynamic Surge Analytics Pipeline:</h3>
+    <div class="tech-flow-box">
+        <span class="flow-step">Occupied & Total Slots in Zone</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step">Demand Formula (Occupied/Total)×100</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step">Multiplier Mapping (1.0x – 2.0x)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step">Dynamic Tariff Recalculation</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step">Chart.js & REST API Dashboard</span>
+    </div>
+</section>
+
+<!-- The Concurrency Problem & Engineering Solution -->
+<section class="section-card">
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">2. The Urban Parking Concurrency Problem</h2>
+            <p class="section-subtitle">Why naive implementations fail under real-world multi-worker loads</p>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;" class="charts-grid">
+        <div style="background-color: var(--danger-bg); border: 1px solid #FECACA; border-radius: var(--radius-md); padding: 1.5rem;">
+            <h3 style="color: var(--danger-color); font-size: 1.1rem; font-weight: 700; margin-bottom: 0.75rem;">
+                ❌ The Flawed Naive Approach
+            </h3>
+            <ul style="padding-left: 1.25rem; font-size: 0.88rem; color: #7F1D1D; display: flex; flex-direction: column; gap: 0.6rem;">
+                <li><strong>Read-Then-Write Race Condition:</strong> User A queries slot status (sees AVAILABLE). At the same millisecond, User B queries same slot (sees AVAILABLE). Both submit bookings; both are confirmed. Result: Double-booking disaster.</li>
+                <li><strong>In-Memory Locks Fail Across Workers:</strong> Using <code>threading.Lock()</code> in Python only protects threads inside a single OS process. In production Gunicorn with 2–4 worker processes, memory is NOT shared, making in-memory locks completely useless.</li>
+                <li><strong>Frontend Button Disabling Is Ineffective:</strong> Client-side UI disables can be bypassed by API scripts, network retries, or concurrent mobile apps.</li>
+            </ul>
+        </div>
+
+        <div style="background-color: var(--success-bg); border: 1px solid #A7F3D0; border-radius: var(--radius-md); padding: 1.5rem;">
+            <h3 style="color: var(--success-color); font-size: 1.1rem; font-weight: 700; margin-bottom: 0.75rem;">
+                ✅ Our Multi-Layered Concurrency Defense
+            </h3>
+            <ul style="padding-left: 1.25rem; font-size: 0.88rem; color: #064E3B; display: flex; flex-direction: column; gap: 0.6rem;">
+                <li><strong>Database Row-Level Locking (PostgreSQL):</strong> Uses <code>with_for_update()</code> to acquire an exclusive row-level lock on the target slot. Competing transactions wait until the first commits or are immediately rejected.</li>
+                <li><strong>Atomic Conditional Updates (SQLite & Postgres):</strong> <code>UPDATE parking_slots SET status = 'OCCUPIED' WHERE id = ? AND status = 'AVAILABLE'</code>. SQLite guarantees atomic execution: exactly one thread gets <code>rowcount == 1</code>; competing threads get <code>rowcount == 0</code> and are safely aborted.</li>
+                <li><strong>Physical Schema Partial Unique Index:</strong> <code>CREATE UNIQUE INDEX idx_active_slot_booking ON bookings(slot_id) WHERE status = 'ACTIVE'</code>. Even if application code failed, the database engine physically rejects duplicate active reservations.</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<!-- Project Review & Viva Preparation Guide -->
+<section class="section-card">
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">3. College Project Review & Viva Preparation</h2>
+            <p class="section-subtitle">Direct answers to core questions frequently asked by academic evaluation committees</p>
+        </div>
+        <span class="badge badge-success">Examiner Q&A</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <div style="background: var(--navy-subtle); padding: 1.25rem; border-radius: var(--radius-md); border-left: 4px solid var(--teal-primary);">
+            <h4 style="color: var(--navy-darkest); font-size: 0.98rem; font-weight: 700; margin-bottom: 0.35rem;">
+                Q1: How do you prove your system prevents race conditions?
+            </h4>
+            <p style="font-size: 0.88rem; color: var(--slate-dark);">
+                We have written automated stress tests in <code>tests/test_concurrency.py</code> using Python's <code>concurrent.futures.ThreadPoolExecutor</code> with a <code>threading.Barrier</code>. We launch 12 parallel threads that hit the booking endpoint at the exact same millisecond for the same slot. In 100% of test runs, exactly <strong>1 thread succeeds (HTTP 201)</strong>, and <strong>11 threads are rejected (HTTP 409 Conflict)</strong>, with exactly 1 active record stored in the database.
+            </p>
+        </div>
+
+        <div style="background: var(--navy-subtle); padding: 1.25rem; border-radius: var(--radius-md); border-left: 4px solid var(--teal-primary);">
+            <h4 style="color: var(--navy-darkest); font-size: 0.98rem; font-weight: 700; margin-bottom: 0.35rem;">
+                Q2: How does the surge pricing algorithm work? Is it simulated or AI-based?
+            </h4>
+            <p style="font-size: 0.88rem; color: var(--slate-dark);">
+                The pricing model is an occupancy-elastic algorithmic function, NOT an unverified machine learning claim. It evaluates real-time bay occupancy: <code>Occupancy % = (Occupied / Total) × 100</code>. When occupancy crosses defined thresholds (&lt;50%, 50–74%, 75–89%, &ge;90%), a transparent multiplier (1.0x to 2.0x) is applied to the zone base rate. It is strictly bounded by anti-gouging minimum (1.0x) and maximum (2.0x) caps.
+            </p>
+        </div>
+
+        <div style="background: var(--navy-subtle); padding: 1.25rem; border-radius: var(--radius-md); border-left: 4px solid var(--teal-primary);">
+            <h4 style="color: var(--navy-darkest); font-size: 0.98rem; font-weight: 700; margin-bottom: 0.35rem;">
+                Q3: How does the application handle SQLite in development vs PostgreSQL in production?
+            </h4>
+            <p style="font-size: 0.88rem; color: var(--slate-dark);">
+                SQLAlchemy ORM provides database abstraction. In development, SQLite is configured with WAL (Write-Ahead Logging) mode and a 15-second busy timeout. In production on PostgreSQL (Render/Railway), the allocation engine dynamically detects the PostgreSQL dialect and applies row-level locking via <code>with_for_update()</code>. Both databases enforce the identical partial unique constraint <code>idx_active_slot_booking</code>.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- Limitations & Future Work -->
+<section class="section-card">
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">4. System Limitations & Future Roadmap</h2>
+            <p class="section-subtitle">Honest academic assessment of project boundaries and next-phase enhancements</p>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;" class="charts-grid">
+        <div style="border: 1px solid var(--navy-border); border-radius: var(--radius-md); padding: 1.25rem;">
+            <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--navy-darkest); margin-bottom: 0.5rem;">Current Boundaries:</h4>
+            <ul style="padding-left: 1.25rem; font-size: 0.85rem; color: var(--slate-medium); display: flex; flex-direction: column; gap: 0.4rem;">
+                <li>Single-region database deployment (not globally distributed multi-region cluster).</li>
+                <li>Demonstration pricing data based on mathematical tiers rather than historical multi-year neural time-series.</li>
+                <li>Fixed pre-allocated bay sizes per zone for academic demonstration.</li>
+            </ul>
+        </div>
+
+        <div style="border: 1px solid var(--navy-border); border-radius: var(--radius-md); padding: 1.25rem;">
+            <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--teal-hover); margin-bottom: 0.5rem;">Future Enhancements:</h4>
+            <ul style="padding-left: 1.25rem; font-size: 0.85rem; color: var(--slate-medium); display: flex; flex-direction: column; gap: 0.4rem;">
+                <li>Integration with IoT ultrasonic bay sensors via MQTT / WebSockets for sub-second hardware status sync.</li>
+                <li>Automated License Plate Recognition (ALPR) camera input for touchless barrier gate access.</li>
+                <li>Payment gateway integration (Stripe / Razorpay UPI webhook reconciliation).</li>
+            </ul>
+        </div>
+    </div>
+</section>
+{% endblock %}

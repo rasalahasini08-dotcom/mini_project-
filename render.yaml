@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: urban-parking-allocator
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_DEBUG
+        value: 0
+      - key: SECRET_KEY
+        generateValue: true
+      - key: BASE_HOURLY_RATE
+        value: 50.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: parking-postgres-db
+          property: connectionString
+
+databases:
+  - name: parking-postgres-db
+    plan: free
+    region: oregon
+    databaseName: parking_db
+    user: parking_user

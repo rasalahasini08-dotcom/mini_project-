@@ -1,239 +1,151 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Urban Parking Allocator | Concurrency-Safe Management & Surge Analytics</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🅿️</text></svg>">
-</head>
-<body>
-    <!-- Top Navigation Bar -->
-    <header class="navbar">
-        <div class="nav-container">
-            <div class="brand">
-                <span class="brand-icon">🅿️</span>
-                <div>
-                    <h1 class="brand-title">Urban Parking Allocator</h1>
-                    <span class="brand-subtitle">Concurrency-Safe Resource Allocation & Surge Analytics</span>
-                </div>
-            </div>
-            <div class="nav-actions">
-                <div class="live-pill" id="live-indicator">
-                    <span class="pulse-dot"></span>
-                    <span id="live-text">System Live</span>
-                </div>
-                <button id="btn-refresh" class="btn btn-secondary" title="Manually refresh dashboard from database">
-                    <span class="refresh-icon">🔄</span> Refresh
-                </button>
-            </div>
-        </div>
-    </header>
+{% extends "base.html" %}
 
-    <!-- Main Container -->
-    <main class="container">
-        <!-- Toast Notification Container -->
-        <div id="toast-container" class="toast-container" aria-live="polite"></div>
+{% block title %}Urban Parking Allocator | Concurrency-Safe Allocation & Surge Analytics{% endblock %}
 
-        <!-- Metrics Ribbon -->
-        <section class="metrics-grid">
-            <div class="metric-card">
-                <span class="metric-label">Total Capacity</span>
-                <span class="metric-value" id="metric-total">12</span>
-                <span class="metric-hint">Standard Urban Bay</span>
-            </div>
-            <div class="metric-card">
-                <span class="metric-label">Available Slots</span>
-                <span class="metric-value text-success" id="metric-available">--</span>
-                <span class="metric-hint">Ready for allocation</span>
-            </div>
-            <div class="metric-card">
-                <span class="metric-label">Occupied Slots</span>
-                <span class="metric-value text-danger" id="metric-occupied">--</span>
-                <span class="metric-hint">Active vehicles</span>
-            </div>
-            <div class="metric-card">
-                <span class="metric-label">Current Occupancy</span>
-                <div class="occupancy-wrap">
-                    <span class="metric-value" id="metric-occupancy">--%</span>
-                    <div class="progress-bar-bg">
-                        <div id="occupancy-bar" class="progress-bar-fill" style="width: 0%;"></div>
-                    </div>
-                </div>
-                <span class="metric-hint" id="metric-occupancy-desc">Calculating...</span>
-            </div>
-            <div class="metric-card highlight-card">
-                <span class="metric-label">Current Hourly Rate</span>
-                <div class="price-wrap">
-                    <span class="metric-value price-text" id="metric-price">₹--</span>
-                    <span id="surge-badge" class="badge badge-success">Standard</span>
-                </div>
-                <span class="metric-hint" id="surge-description">Base pricing</span>
-            </div>
-        </section>
-
-        <!-- Surge Pricing Analytics Breakdown -->
-        <section class="section-card">
-            <div class="section-header">
-                <div>
-                    <h2 class="section-title">Dynamic Surge Pricing Model</h2>
-                    <p class="section-subtitle">Real-time hourly parking fee dynamically adjusted based on bay occupancy</p>
-                </div>
-                <span class="formula-badge">Formula: (Occupied Slots / 12) × 100</span>
-            </div>
-            <div class="tiers-grid">
-                <div class="tier-card" id="tier-standard">
-                    <div class="tier-top">
-                        <span class="tier-title">Standard Tier</span>
-                        <span class="tier-rate">₹50 / hr</span>
-                    </div>
-                    <div class="tier-range">Occupancy &lt; 50% (0 – 5 slots)</div>
-                    <p class="tier-note">Normal operating demand. Standard flat base fee applied.</p>
-                </div>
-                <div class="tier-card" id="tier-moderate">
-                    <div class="tier-top">
-                        <span class="tier-title">Moderate Surge Tier</span>
-                        <span class="tier-rate">₹75 / hr</span>
-                    </div>
-                    <div class="tier-range">Occupancy 50% to &lt; 80% (6 – 9 slots)</div>
-                    <p class="tier-note">Elevated demand. 1.5x multiplier to incentivize turnover.</p>
-                </div>
-                <div class="tier-card" id="tier-peak">
-                    <div class="tier-top">
-                        <span class="tier-title">Peak Surge Tier</span>
-                        <span class="tier-rate">₹100 / hr</span>
-                    </div>
-                    <div class="tier-range">Occupancy &ge; 80% (10 – 12 slots)</div>
-                    <p class="tier-note">Congestion mitigation. 2.0x peak pricing to reserve capacity.</p>
-                </div>
-            </div>
-        </section>
-
-        <!-- Visual Parking Grid (12 Slots) -->
-        <section class="section-card">
-            <div class="section-header">
-                <div>
-                    <h2 class="section-title">Parking Bay Visual Layout</h2>
-                    <p class="section-subtitle">Select any available slot to book, or manage active allocations</p>
-                </div>
-                <div class="legend">
-                    <span class="legend-item"><span class="dot dot-available"></span> Available</span>
-                    <span class="legend-item"><span class="dot dot-occupied"></span> Occupied</span>
-                </div>
-            </div>
-
-            <!-- Slots Grid -->
-            <div id="slots-grid" class="slots-grid">
-                <!-- Slot cards generated dynamically via JavaScript -->
-                <div class="loading-state">Loading parking slots from database...</div>
-            </div>
-        </section>
-
-        <!-- Recent Activity & Audit History -->
-        <section class="section-card">
-            <div class="section-header">
-                <div>
-                    <h2 class="section-title">Recent Allocation Audit Trail</h2>
-                    <p class="section-subtitle">Persistent transaction log tracking active and released parking records</p>
-                </div>
-                <span class="audit-counter" id="history-count">0 records</span>
-            </div>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Booking ID</th>
-                            <th>Slot</th>
-                            <th>Driver Name</th>
-                            <th>Vehicle Number</th>
-                            <th>Applied Rate</th>
-                            <th>Booked At</th>
-                            <th>Status</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-tbody">
-                        <tr>
-                            <td colspan="8" class="text-center text-muted">Loading audit history...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <!-- Technical Concurrency & Review Info Box -->
-        <section class="tech-review-card">
-            <div class="tech-header">
-                <span class="tech-icon">🛡️</span>
-                <div>
-                    <h3 class="tech-title">Engineering Architecture & Concurrency Defense</h3>
-                    <p class="tech-sub">Key mechanisms implemented for race condition prevention & ACID compliance</p>
-                </div>
-            </div>
-            <div class="tech-points">
-                <div class="tech-point">
-                    <strong>1. Atomic Conditional Updates:</strong>
-                    <code>UPDATE parking_slots SET status = 'OCCUPIED' WHERE slot_id = ? AND status = 'AVAILABLE'</code>
-                    Guarantees SQLite atomicity. If two threads compete for the same slot, exactly one thread sees <code>rowcount == 1</code>; all competing threads see <code>rowcount == 0</code> and are safely rejected.
-                </div>
-                <div class="tech-point">
-                    <strong>2. Database Partial Unique Constraint:</strong>
-                    <code>CREATE UNIQUE INDEX idx_active_slot_booking ON bookings(slot_id) WHERE status = 'ACTIVE'</code>
-                    Hard schema-level barrier preventing duplicate concurrent active allocations for the same slot.
-                </div>
-                <div class="tech-point">
-                    <strong>3. Immediate Write Locks & WAL Mode:</strong>
-                    Transactions use <code>BEGIN IMMEDIATE</code> with <code>PRAGMA journal_mode = WAL</code> to prevent lock escalation deadlocks and ensure non-blocking concurrent reads.
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <!-- Booking Modal -->
-    <div id="booking-modal" class="modal-backdrop" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-header">
-                <h3 class="modal-title">Allocate Parking Slot <span id="modal-slot-id">P01</span></h3>
-                <button type="button" class="btn-close" id="btn-close-modal" aria-label="Close">&times;</button>
-            </div>
-            <form id="booking-form">
-                <input type="hidden" id="form-slot-id" name="slot_id" value="">
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label class="form-label" for="form-user-name">Driver Full Name</label>
-                        <input type="text" id="form-user-name" class="form-control" placeholder="e.g. Rohan Sharma" required autocomplete="off">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="form-vehicle-no">Vehicle Registration Number</label>
-                        <input type="text" id="form-vehicle-no" class="form-control text-uppercase" placeholder="e.g. KA-05-MB-4512" required autocomplete="off">
-                    </div>
-                    <div class="rate-preview-card">
-                        <div class="rate-preview-header">
-                            <span>Locked-In Hourly Rate:</span>
-                            <span class="rate-preview-amount" id="modal-rate-preview">₹50 / hr</span>
-                        </div>
-                        <span class="rate-preview-sub">Computed via live surge analytics based on current bay occupancy.</span>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" id="btn-cancel-modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="btn-submit-booking">
-                        <span class="btn-spinner" id="btn-spinner"></span>
-                        <span id="btn-submit-text">Confirm Booking</span>
-                    </button>
-                </div>
-            </form>
+{% block content %}
+<!-- Hero Section -->
+<section style="background: linear-gradient(135deg, #0B192C 0%, #1E3E62 100%); color: #FFFFFF; border-radius: var(--radius-lg); padding: 3rem 2.5rem; margin-bottom: 2.5rem; border: 1px solid var(--navy-dark); box-shadow: var(--shadow-md);">
+    <div style="max-width: 800px;">
+        <span class="badge badge-success" style="margin-bottom: 1rem; background-color: rgba(0, 168, 150, 0.2); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.4);">
+            Enterprise Concurrency Engine &bull; College Project Review
+        </span>
+        <h1 style="font-size: 2.5rem; font-weight: 800; line-height: 1.15; margin-bottom: 1rem; letter-spacing: -0.02em;">
+            Concurrency-Safe Urban Parking Allocator With Surge Analytics
+        </h1>
+        <p style="font-size: 1.05rem; color: #CBD5E1; line-height: 1.6; margin-bottom: 2rem;">
+            A production-ready urban parking management system designed to eliminate race conditions and double-bookings using database-level locking and atomic transactions, paired with real-time occupancy-driven surge pricing.
+        </p>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <a href="{{ url_for('booking.book_page') }}" class="btn btn-primary" style="padding: 0.75rem 1.75rem; font-size: 1rem;">
+                🚗 Find & Book Parking
+            </a>
+            <a href="{{ url_for('main.availability') }}" class="btn btn-secondary" style="padding: 0.75rem 1.5rem; font-size: 1rem;">
+                📍 View Zone Availability
+            </a>
+            <a href="{{ url_for('analytics.analytics_dashboard') }}" class="btn btn-dark" style="padding: 0.75rem 1.5rem; font-size: 1rem; border: 1px solid #334155;">
+                📊 Surge Analytics
+            </a>
         </div>
     </div>
+</section>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="container footer-content">
-            <p><strong>Concurrency-Safe Urban Parking Allocator With Surge Analytics</strong> &bull; College Mini-Project</p>
-            <p class="footer-meta">Python &bull; Flask &bull; SQLite Concurrency Control &bull; RESTful Architecture</p>
+<!-- Live City-Wide Metrics Ribbon -->
+<section class="metrics-grid">
+    <div class="metric-card">
+        <span class="metric-label">Total City Capacity</span>
+        <span class="metric-value" id="metric-total">{{ stats.total_capacity }}</span>
+        <span class="metric-hint">Active bay slots across {{ stats.zones_count }} zones</span>
+    </div>
+    <div class="metric-card">
+        <span class="metric-label">Available Slots</span>
+        <span class="metric-value" id="metric-available" style="color: var(--success-color);">{{ stats.available_slots }}</span>
+        <span class="metric-hint">Ready for instant reservation</span>
+    </div>
+    <div class="metric-card">
+        <span class="metric-label">Occupied Slots</span>
+        <span class="metric-value" id="metric-occupied" style="color: var(--danger-color);">{{ stats.occupied_slots }}</span>
+        <span class="metric-hint">Vehicles actively parked</span>
+    </div>
+    <div class="metric-card">
+        <span class="metric-label">City-Wide Occupancy</span>
+        <span class="metric-value" id="metric-occupancy">{{ stats.overall_occupancy_percentage }}%</span>
+        <div class="progress-bar-bg">
+            <div id="occupancy-bar" class="progress-bar-fill {% if stats.overall_occupancy_percentage >= 85 %}danger{% elif stats.overall_occupancy_percentage >= 50 %}warning{% endif %}" style="width: {{ stats.overall_occupancy_percentage }}%;"></div>
         </div>
-    </footer>
+        <span class="metric-hint">Aggregated urban mobility load</span>
+    </div>
+    <div class="metric-card highlight-card">
+        <span class="metric-label">Active Bookings</span>
+        <span class="metric-value">{{ stats.active_bookings }}</span>
+        <span class="metric-hint">{{ stats.total_historical_bookings }} historical transactions logged</span>
+    </div>
+</section>
 
-    <script src="/static/script.js"></script>
-</body>
-</html>
+<!-- Urban Parking Zones Snapshot -->
+<section class="section-card">
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">Urban Parking Zones</h2>
+            <p class="section-subtitle">Real-time status, surge tariffs, and capacity across metropolitan sectors</p>
+        </div>
+        <a href="{{ url_for('main.availability') }}" class="btn btn-secondary btn-sm">Full Zone View &rarr;</a>
+    </div>
+
+    <div class="zones-grid">
+        {% for zone in zones %}
+        <div class="zone-card">
+            <div>
+                <div class="zone-header">
+                    <span class="zone-code">{{ zone.zone_code }}</span>
+                    <span class="badge {{ zone.badge_class }}">{{ zone.demand_level }}</span>
+                </div>
+                <h3 class="zone-name">{{ zone.zone_name }}</h3>
+                <div class="progress-bar-bg" style="margin: 0.75rem 0 0.5rem 0;">
+                    <div class="progress-bar-fill {% if zone.occupancy_percentage >= 85 %}danger{% elif zone.occupancy_percentage >= 50 %}warning{% endif %}" style="width: {{ zone.occupancy_percentage }}%;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: #64748B;">
+                    <span>Available: <strong style="color: #059669;">{{ zone.available_slots }}</strong></span>
+                    <span>Occupancy: <strong>{{ zone.occupancy_percentage }}%</strong></span>
+                </div>
+            </div>
+
+            <div>
+                <div class="zone-pricing-row">
+                    <div>
+                        <span style="font-size: 0.75rem; text-transform: uppercase; color: #64748B; font-weight: 600;">Hourly Tariff</span>
+                        <div class="zone-rate-value">₹{{ zone.effective_rate }}<span style="font-size: 0.8rem; font-weight: 500; color: #64748B;"> / hr</span></div>
+                    </div>
+                    <span class="badge badge-neutral">{{ zone.multiplier }}x Multiplier</span>
+                </div>
+                <a href="{{ url_for('booking.book_page', zone_id=zone.zone_id) }}" class="btn btn-primary" style="width: 100%;">
+                    Book Slot in {{ zone.zone_code }}
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<!-- How System Works (3 Pillars) -->
+<section class="section-card">
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">Engineering Core: How the Allocator Works</h2>
+            <p class="section-subtitle">Architectural pillars ensuring zero race conditions and transparent pricing</p>
+        </div>
+        <a href="{{ url_for('main.about') }}" class="btn btn-secondary btn-sm">Technical Architecture &rarr;</a>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
+        <div style="background-color: var(--navy-subtle); padding: 1.5rem; border-radius: var(--radius-md); border: 1px solid var(--navy-border);">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">🛡️</div>
+            <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--navy-darkest); margin-bottom: 0.5rem;">
+                1. Concurrency Safety
+            </h3>
+            <p style="font-size: 0.88rem; color: var(--slate-medium);">
+                Uses database row-level locking (<code>with_for_update</code>) in PostgreSQL and atomic conditional updates in SQLite. Enforces a database-level partial unique index (<code>idx_active_slot_booking</code>) preventing double-booking even under intense parallel thread load.
+            </p>
+        </div>
+
+        <div style="background-color: var(--navy-subtle); padding: 1.5rem; border-radius: var(--radius-md); border: 1px solid var(--navy-border);">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">📈</div>
+            <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--navy-darkest); margin-bottom: 0.5rem;">
+                2. Transparent Surge Pricing
+            </h3>
+            <p style="font-size: 0.88rem; color: var(--slate-medium);">
+                Dynamic tariff calculated purely from real database occupancy: <code>(Occupied / Total) × 100</code>. Tiers range from Standard (1.0x) to Peak (2.0x) with anti-gouging caps. Shared calculation code ensures the frontend and backend always match.
+            </p>
+        </div>
+
+        <div style="background-color: var(--navy-subtle); padding: 1.5rem; border-radius: var(--radius-md); border: 1px solid var(--navy-border);">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔄</div>
+            <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--navy-darkest); margin-bottom: 0.5rem;">
+                3. Instant Release & Audit
+            </h3>
+            <p style="font-size: 0.88rem; color: var(--slate-medium);">
+                Drivers receive a unique reference code (<code>BKG-YYYYMMDD-XXXXXXXX</code>). Cancelling releases the slot immediately in an atomic transaction and records full audit trail timestamps for administrative oversight.
+            </p>
+        </div>
+    </div>
+</section>
+{% endblock %}

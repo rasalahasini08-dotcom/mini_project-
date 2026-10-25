@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}Booking Audit Log | Urban Parking Allocator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Booking Audit Records</h1>
+        <p class="page-subtitle">Historical transaction ledger and real-time reservation tracking with immutable timestamps</p>
+    </div>
+    <div style="display: flex; gap: 0.75rem;">
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary btn-sm">
+            &larr; Admin Dashboard
+        </a>
+    </div>
+</div>
+
+<!-- Search & Status Filter Bar -->
+<section class="section-card" style="padding: 1.25rem; margin-bottom: 1.5rem;">
+    <form method="GET" action="{{ url_for('admin.manage_bookings') }}" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; flex: 1;">
+            <input type="text" name="q" class="form-control" placeholder="Search reference, vehicle, or driver name..." value="{{ search_query }}" style="max-width: 380px;">
+            <select name="status" class="form-control" style="width: auto; min-width: 150px;">
+                <option value="ALL" {% if selected_status == 'ALL' or not selected_status %}selected{% endif %}>All Statuses</option>
+                <option value="ACTIVE" {% if selected_status == 'ACTIVE' %}selected{% endif %}>Active Only</option>
+                <option value="CANCELLED" {% if selected_status == 'CANCELLED' %}selected{% endif %}>Cancelled Only</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">Search</button>
+            {% if search_query or (selected_status and selected_status != 'ALL') %}
+                <a href="{{ url_for('admin.manage_bookings') }}" class="btn btn-secondary btn-sm">Clear</a>
+            {% endif %}
+        </div>
+
+        <div style="font-size: 0.85rem; color: var(--slate-muted);">
+            Showing <strong>{{ bookings|length }}</strong> records
+        </div>
+    </form>
+</section>
+
+<!-- Bookings Ledger Table -->
+<section class="section-card">
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Booking Reference</th>
+                    <th>Zone & Bay</th>
+                    <th>Driver Name</th>
+                    <th>Vehicle Reg.</th>
+                    <th>Contact Phone</th>
+                    <th>Locked Tariff</th>
+                    <th>Surge</th>
+                    <th>Booked At</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in bookings %}
+                <tr>
+                    <td>
+                        <code style="font-family: var(--font-mono); font-weight: 700; color: var(--navy-darkest);">{{ b.booking_reference }}</code>
+                    </td>
+                    <td>
+                        <strong>{{ b.slot.slot_number }}</strong><br>
+                        <span style="font-size: 0.75rem; color: #64748B;">{{ b.slot.zone.name }}</span>
+                    </td>
+                    <td>{{ b.driver_name }}</td>
+                    <td>
+                        <span style="font-family: var(--font-mono); font-weight: 600;">{{ b.vehicle_number }}</span>
+                    </td>
+                    <td>{{ b.contact_number or '-' }}</td>
+                    <td><strong>₹{{ b.hourly_rate }} / hr</strong></td>
+                    <td><span class="badge badge-neutral">{{ b.multiplier }}x</span></td>
+                    <td style="font-size: 0.8rem; color: #64748B;">{{ b.booked_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        {% if b.status == 'ACTIVE' %}
+                            <span class="badge badge-success">ACTIVE</span>
+                        {% else %}
+                            <span class="badge badge-neutral">CANCELLED</span>
+                            {% if b.cancelled_at %}
+                                <span style="display: block; font-size: 0.7rem; color: #94A3B8;">{{ b.cancelled_at.strftime('%H:%M') }}</span>
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if b.status == 'ACTIVE' %}
+                            <form method="POST" action="{{ url_for('admin.cancel_booking_admin', booking_ref=b.booking_reference) }}" onsubmit="return confirm('Cancel reservation {{ b.booking_reference }}?');">
+                                <button type="submit" class="btn btn-danger btn-sm" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">
+                                    Release Slot
+                                </button>
+                            </form>
+                        {% else %}
+                            <span style="font-size: 0.75rem; color: #94A3B8;">Released</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="10" style="text-align: center; color: #64748B; padding: 2rem;">No matching booking records found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

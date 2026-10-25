@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}Surge Analytics & Demand Dashboard | Urban Parking Allocator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Surge Analytics & Demand Dashboard</h1>
+        <p class="page-subtitle">Real-time data-driven occupancy modeling, tariff multipliers, and urban utilization trends</p>
+    </div>
+    <div style="display: flex; gap: 0.75rem;">
+        <button id="btn-refresh-analytics" class="btn btn-primary btn-sm">
+            🔄 Refresh Analytics Data
+        </button>
+    </div>
+</div>
+
+<!-- Dynamic Surge Pricing Model Breakdown -->
+<section class="section-card">
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">Surge Pricing Formula & Multiplier Tiers</h2>
+            <p class="section-subtitle">Mathematical pricing model dynamically adjusting hourly parking fees based on live bay occupancy</p>
+        </div>
+        <span class="badge badge-info" style="font-family: var(--font-mono); font-size: 0.8rem;">
+            Formula: (Occupied Slots / Total Capacity) × 100
+        </span>
+    </div>
+
+    <div class="tiers-grid">
+        {% for tier in pricing_tiers %}
+        <div class="tier-card {% if loop.first %}active-tier{% endif %}">
+            <div class="tier-top">
+                <span class="tier-title">{{ tier.tier }} Tier</span>
+                <span class="tier-mult">{{ tier.multiplier }}x Multiplier</span>
+            </div>
+            <div class="tier-range">Occupancy {{ tier.min_occupancy|int }}% to &lt; {{ tier.max_occupancy|int }}%</div>
+            <p class="tier-desc">{{ tier.description }}</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div style="background-color: var(--navy-subtle); padding: 1rem 1.25rem; border-radius: var(--radius-sm); margin-top: 1.25rem; font-size: 0.82rem; color: #475569; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+        <div>
+            <strong>Anti-Gouging Caps:</strong> Minimum rate clamped at 1.0x (base rate). Maximum peak surge rate strictly capped at 2.0x base rate.
+        </div>
+        <span class="badge badge-neutral">Demonstration Simulation</span>
+    </div>
+</section>
+
+<!-- Visual Charts Grid (Chart.js) -->
+<section class="charts-grid">
+    <!-- Chart 1: Zone-wise Occupancy & Availability -->
+    <div class="chart-card">
+        <div class="section-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem;">
+            <div>
+                <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--navy-darkest);">Zone-Wise Capacity & Occupancy</h3>
+                <p style="font-size: 0.78rem; color: var(--slate-muted);">Stacked breakdown of available vs occupied slots per zone</p>
+            </div>
+            <span class="badge badge-neutral">Live Database</span>
+        </div>
+        <div class="chart-container">
+            <canvas id="chart-occupancy"></canvas>
+        </div>
+    </div>
+
+    <!-- Chart 2: Hourly Rate & Surge Multiplier by Zone -->
+    <div class="chart-card">
+        <div class="section-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem;">
+            <div>
+                <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--navy-darkest);">Dynamic Tariff by Zone (₹/hr)</h3>
+                <p style="font-size: 0.78rem; color: var(--slate-muted);">Current effective rate including active surge multiplier</p>
+            </div>
+            <span class="badge badge-neutral">Dynamic Tariff</span>
+        </div>
+        <div class="chart-container">
+            <canvas id="chart-pricing"></canvas>
+        </div>
+    </div>
+
+    <!-- Chart 3: City-Wide Parking Distribution -->
+    <div class="chart-card">
+        <div class="section-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem;">
+            <div>
+                <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--navy-darkest);">Metropolitan Allocation Distribution</h3>
+                <p style="font-size: 0.78rem; color: var(--slate-muted);">Proportion of occupied vehicles vs vacant bays</p>
+            </div>
+            <span class="badge badge-neutral">City Status</span>
+        </div>
+        <div class="chart-container">
+            <canvas id="chart-distribution"></canvas>
+        </div>
+    </div>
+
+    <!-- Chart 4: Hourly Utilization Trends -->
+    <div class="chart-card">
+        <div class="section-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem;">
+            <div>
+                <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--navy-darkest);">Urban Mobility Utilization Curve</h3>
+                <p style="font-size: 0.78rem; color: var(--slate-muted);">Typical occupancy pattern across peak morning, lunch, and evening hours</p>
+            </div>
+            <span class="badge badge-neutral">Demand Profile</span>
+        </div>
+        <div class="chart-container">
+            <canvas id="chart-trend"></canvas>
+        </div>
+    </div>
+</section>
+
+<!-- Tabular Zone Analytics Matrix -->
+<section class="section-card">
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">Live Zone Demand & Pricing Matrix</h2>
+            <p class="section-subtitle">Real-time database analytics feed computed from active reservations</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Zone</th>
+                    <th>Total Slots</th>
+                    <th>Occupied</th>
+                    <th>Available</th>
+                    <th>Occupancy %</th>
+                    <th>Base Tariff</th>
+                    <th>Surge Multiplier</th>
+                    <th>Current Rate</th>
+                    <th>Demand Tier</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for z in zone_summaries %}
+                <tr>
+                    <td><strong>{{ z.zone_code }}</strong> &bull; {{ z.zone_name }}</td>
+                    <td>{{ z.total_slots }}</td>
+                    <td style="color: var(--danger-color); font-weight: 600;">{{ z.occupied_slots }}</td>
+                    <td style="color: var(--success-color); font-weight: 600;">{{ z.available_slots }}</td>
+                    <td>
+                        <strong>{{ z.occupancy_percentage }}%</strong>
+                    </td>
+                    <td>₹{{ z.base_rate }}/hr</td>
+                    <td><span class="badge badge-neutral">{{ z.multiplier }}x</span></td>
+                    <td><strong style="color: var(--navy-darkest); font-size: 1rem;">₹{{ z.effective_rate }} / hr</strong></td>
+                    <td><span class="badge {{ z.badge_class }}">{{ z.demand_level }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
+{% endblock %}

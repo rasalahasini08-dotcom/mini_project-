@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}Administrator Control Center | Urban Parking Allocator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Administrator Control Center</h1>
+        <p class="page-subtitle">Authenticated executive dashboard: live facility metrics, revenue audit, and zone governance</p>
+    </div>
+    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <a href="{{ url_for('admin.manage_zones') }}" class="btn btn-secondary btn-sm">
+            🏢 Manage Zones
+        </a>
+        <a href="{{ url_for('admin.manage_slots') }}" class="btn btn-secondary btn-sm">
+            🅿️ Manage Slots
+        </a>
+        <a href="{{ url_for('admin.manage_bookings') }}" class="btn btn-secondary btn-sm">
+            📋 Full Booking Log
+        </a>
+        <a href="{{ url_for('admin.logout') }}" class="btn btn-danger btn-sm">
+            Sign Out
+        </a>
+    </div>
+</div>
+
+<!-- Admin KPI Metrics Ribbon -->
+<section class="metrics-grid">
+    <div class="metric-card highlight-card">
+        <span class="metric-label">Estimated Revenue</span>
+        <span class="metric-value">₹{{ "%.2f"|format(total_revenue) }}</span>
+        <span class="metric-hint">Cumulative from {{ stats.total_historical_bookings }} reservations</span>
+    </div>
+    <div class="metric-card">
+        <span class="metric-label">Active Parked Vehicles</span>
+        <span class="metric-value" style="color: var(--danger-color);">{{ stats.occupied_slots }}</span>
+        <span class="metric-hint">Currently occupying physical bays</span>
+    </div>
+    <div class="metric-card">
+        <span class="metric-label">Available Capacity</span>
+        <span class="metric-value" style="color: var(--success-color);">{{ stats.available_slots }}</span>
+        <span class="metric-hint">Out of {{ stats.total_capacity }} city slots</span>
+    </div>
+    <div class="metric-card">
+        <span class="metric-label">City Occupancy Load</span>
+        <span class="metric-value">{{ stats.overall_occupancy_percentage }}%</span>
+        <div class="progress-bar-bg">
+            <div class="progress-bar-fill {% if stats.overall_occupancy_percentage >= 85 %}danger{% elif stats.overall_occupancy_percentage >= 50 %}warning{% endif %}" style="width: {{ stats.overall_occupancy_percentage }}%;"></div>
+        </div>
+        <span class="metric-hint">Live resource pressure</span>
+    </div>
+</section>
+
+<!-- Active Urban Zones Overview -->
+<section class="section-card">
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">Urban Parking Zones Summary</h2>
+            <p class="section-subtitle">Real-time status, baseline tariffs, and live surge multiplier per zone</p>
+        </div>
+        <a href="{{ url_for('admin.manage_zones') }}" class="btn btn-primary btn-sm">+ Add / Configure Zones</a>
+    </div>
+
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Zone Code</th>
+                    <th>Zone Name</th>
+                    <th>Location</th>
+                    <th>Base Rate</th>
+                    <th>Total Capacity</th>
+                    <th>Active / Occupied</th>
+                    <th>Occupancy %</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for z in zones %}
+                {% set occupied = z.slots.filter_by(status='OCCUPIED').count() %}
+                {% set total = z.slots.count() %}
+                {% set pct = (occupied / total * 100)|round(1) if total > 0 else 0 %}
+                <tr>
+                    <td><span class="zone-code">{{ z.code }}</span></td>
+                    <td><strong>{{ z.name }}</strong></td>
+                    <td><span style="font-size: 0.8rem; color: #64748B;">{{ z.location }}</span></td>
+                    <td>₹{{ z.base_hourly_rate }}/hr</td>
+                    <td>{{ total }}</td>
+                    <td><strong style="color: var(--danger-color);">{{ occupied }}</strong></td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span>{{ pct }}%</span>
+                            <div class="progress-bar-bg" style="width: 50px; margin: 0;">
+                                <div class="progress-bar-fill {% if pct >= 85 %}danger{% elif pct >= 50 %}warning{% endif %}" style="width: {{ pct }}%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        {% if z.is_active %}
+                            <span class="badge badge-success">ACTIVE</span>
+                        {% else %}
+                            <span class="badge badge-danger">INACTIVE</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('admin.manage_slots', zone_id=z.id) }}" class="btn btn-secondary btn-sm">
+                            View Slots
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- Recent Booking Transactions Audit -->
+<section class="section-card">
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">Recent Allocation Transactions</h2>
+            <p class="section-subtitle">Latest reservation events and status changes with audit timestamps</p>
+        </div>
+        <a href="{{ url_for('admin.manage_bookings') }}" class="btn btn-secondary btn-sm">View Full Audit Log &rarr;</a>
+    </div>
+
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Reference</th>
+                    <th>Zone / Slot</th>
+                    <th>Driver Name</th>
+                    <th>Vehicle Reg.</th>
+                    <th>Applied Tariff</th>
+                    <th>Timestamp (UTC)</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in recent_bookings %}
+                <tr>
+                    <td><code style="font-family: var(--font-mono); font-weight: 700; color: var(--navy-darkest);">{{ b.booking_reference }}</code></td>
+                    <td><strong>{{ b.slot.slot_number }}</strong> <span style="font-size: 0.75rem; color: #64748B;">({{ b.slot.zone.code }})</span></td>
+                    <td>{{ b.driver_name }}</td>
+                    <td><span style="font-family: var(--font-mono); font-weight: 600;">{{ b.vehicle_number }}</span></td>
+                    <td><strong>₹{{ b.hourly_rate }} / hr</strong></td>
+                    <td style="font-size: 0.8rem; color: #64748B;">{{ b.booked_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        {% if b.status == 'ACTIVE' %}
+                            <span class="badge badge-success">ACTIVE</span>
+                        {% else %}
+                            <span class="badge badge-neutral">CANCELLED</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if b.status == 'ACTIVE' %}
+                        <form method="POST" action="{{ url_for('admin.cancel_booking_admin', booking_ref=b.booking_reference) }}" style="display: inline;" onsubmit="return confirm('Cancel booking {{ b.booking_reference }} and free slot {{ b.slot.slot_number }}?');">
+                            <button type="submit" class="btn btn-danger btn-sm" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">
+                                Force Release
+                            </button>
+                        </form>
+                        {% else %}
+                            <span style="font-size: 0.75rem; color: #94A3B8;">Released</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" style="text-align: center; color: #64748B; padding: 2rem;">No booking records available yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

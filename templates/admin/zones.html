@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Parking Zones | Urban Parking Allocator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Parking Zone Management</h1>
+        <p class="page-subtitle">Configure metropolitan parking sectors, base pricing tariffs, and operational bay capacities</p>
+    </div>
+    <div style="display: flex; gap: 0.75rem;">
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary btn-sm">
+            &larr; Admin Dashboard
+        </a>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 2fr; gap: 2rem;" class="charts-grid">
+    <!-- Create New Zone Form -->
+    <section class="section-card" style="margin-bottom: 0;">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title" style="font-size: 1.15rem;">+ Create Parking Zone</h2>
+                <p class="section-subtitle">Provision a new urban parking sector</p>
+            </div>
+        </div>
+
+        <form method="POST" action="{{ url_for('admin.manage_zones') }}">
+            <input type="hidden" name="action" value="create">
+
+            <div class="form-group">
+                <label class="form-label" for="code">Zone Identifier Code *</label>
+                <input type="text" id="code" name="code" class="form-control" placeholder="e.g. ZONE-E" required style="text-transform: uppercase;">
+                <span style="font-size: 0.75rem; color: #64748B;">Unique tag used for prefixing slot identifiers (e.g. E-01).</span>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="name">Zone Name *</label>
+                <input type="text" id="name" name="name" class="form-control" placeholder="e.g. Harbor Point Ferry Terminal" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="location">Physical Location *</label>
+                <input type="text" id="location" name="location" class="form-control" placeholder="e.g. Pier 14, Waterfront Boulevard" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="base_hourly_rate">Base Hourly Tariff (₹) *</label>
+                <input type="number" id="base_hourly_rate" name="base_hourly_rate" class="form-control" value="50" min="10" max="500" step="5" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="total_slots">Number of Slots to Provision *</label>
+                <input type="number" id="total_slots" name="total_slots" class="form-control" value="8" min="2" max="50" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="amenities">Amenities</label>
+                <input type="text" id="amenities" name="amenities" class="form-control" placeholder="e.g. Covered, Fast EV Chargers, 24/7 Security" value="Covered, 24/7 Security">
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem;">
+                Create Zone & Provision Slots
+            </button>
+        </form>
+    </section>
+
+    <!-- Existing Zones List -->
+    <section class="section-card" style="margin-bottom: 0;">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">Configured Urban Zones ({{ zones|length }})</h2>
+                <p class="section-subtitle">Real-time status and operational controls</p>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Name & Amenities</th>
+                        <th>Base Rate</th>
+                        <th>Slots</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for z in zones %}
+                    <tr>
+                        <td><span class="zone-code">{{ z.code }}</span></td>
+                        <td>
+                            <strong>{{ z.name }}</strong><br>
+                            <span style="font-size: 0.78rem; color: #64748B;">📍 {{ z.location }}</span><br>
+                            <span style="font-size: 0.72rem; color: #94A3B8;">{{ z.amenities }}</span>
+                        </td>
+                        <td><strong>₹{{ z.base_hourly_rate }}</strong> / hr</td>
+                        <td>{{ z.slots.count() }} bays</td>
+                        <td>
+                            {% if z.is_active %}
+                                <span class="badge badge-success">ACTIVE</span>
+                            {% else %}
+                                <span class="badge badge-danger">INACTIVE</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                                <a href="{{ url_for('admin.manage_slots', zone_id=z.id) }}" class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+                                    Slots
+                                </a>
+                                <form method="POST" action="{{ url_for('admin.manage_zones') }}" style="display: inline;">
+                                    <input type="hidden" name="action" value="toggle_active">
+                                    <input type="hidden" name="zone_id" value="{{ z.id }}">
+                                    <button type="submit" class="btn btn-sm {% if z.is_active %}btn-danger{% else %}btn-primary{% endif %}" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+                                        {% if z.is_active %}Deactivate{% else %}Activate{% endif %}
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}
