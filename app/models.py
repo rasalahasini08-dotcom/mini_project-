@@ -34,6 +34,42 @@ class AdminUser(db.Model):
         }
 
 
+class User(db.Model):
+    """Registered driver / commuter account model for personal booking management."""
+    __tablename__ = "users"
+
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    email = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    full_name = db.Column(db.String(100), nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    vehicle_number = db.Column(db.String(20), nullable=True)
+    contact_number = db.Column(db.String(25), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    bookings = db.relationship("Booking", back_populates="user", lazy="dynamic")
+
+    def set_password(self, password: str) -> None:
+        """Hash and store user password."""
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        """Verify user password."""
+        return check_password_hash(self.password_hash, password)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "username": self.username,
+            "email": self.email,
+            "full_name": self.full_name,
+            "vehicle_number": self.vehicle_number,
+            "contact_number": self.contact_number,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class ParkingZone(db.Model):
     """
     Parking Zone model representing an urban parking facility or section.
@@ -129,6 +165,7 @@ class Booking(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     booking_reference = db.Column(db.String(36), unique=True, nullable=False, index=True)
     slot_id = db.Column(db.Integer, db.ForeignKey("parking_slots.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     driver_name = db.Column(db.String(100), nullable=False)
     vehicle_number = db.Column(db.String(20), nullable=False, index=True)
     contact_number = db.Column(db.String(25), nullable=True)
@@ -140,6 +177,7 @@ class Booking(db.Model):
 
     # Relationships
     slot = db.relationship("ParkingSlot", back_populates="bookings")
+    user = db.relationship("User", back_populates="bookings")
 
     __table_args__ = (
         Index(
@@ -157,6 +195,7 @@ class Booking(db.Model):
             "id": self.id,
             "booking_reference": self.booking_reference,
             "slot_id": self.slot_id,
+            "user_id": self.user_id,
             "slot_number": self.slot.slot_number if self.slot else None,
             "zone_code": self.slot.zone.code if self.slot and self.slot.zone else None,
             "zone_name": self.slot.zone.name if self.slot and self.slot.zone else None,
